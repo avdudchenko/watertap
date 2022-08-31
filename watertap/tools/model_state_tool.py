@@ -17,6 +17,7 @@ from pyomo.environ import (
     Constraint,
 )
 import idaes.core.util.scaling as iscale
+from idaes.core.util import to_json, from_json
 
 
 class modelStateStorage:
@@ -29,6 +30,7 @@ class modelStateStorage:
         restorVarFixedState=True,
         restorConstraints=True,
         restoreScaling=True,
+        ignoreList=[],
         **kwargs
     ):
         """
@@ -45,6 +47,7 @@ class modelStateStorage:
         self.restorVarFixedState = restorVarFixedState
         self.restorConstraints = restorConstraints
         self.restoreScaling = restoreScaling
+        self.ignoreList = ignoreList
         self.store_state()
 
     def store_state(self):
@@ -79,11 +82,19 @@ class modelStateStorage:
         if self.restoreScaling:
             self._restore_scaling_state(model)
 
+    def _ignore_check(self, v):
+        # print(v, self.ignoreList, str(v) in self.ignoreList)
+        if str(v) in self.ignoreList:
+            print("ignored ", v)
+            return False
+        else:
+            return True
+
     def _store_vars(self):
         """Stores model variable states"""
         self.variableStates = ComponentMap()
         for v in self.model.component_data_objects(Var):
-            self.variableStates[v] = v.value
+            self.variableStates[v] = (v.value, v.lb, v.ub)
 
     def _store_var_fixed_state(self):
         """Stores model variable fixed states"""
@@ -106,29 +117,37 @@ class modelStateStorage:
     def _restore_vars(self, model):
         """Stores model variable states"""
         for v, val in self.variableStates.items():
-            model.find_component(v).set_value(val)
+            if self._ignore_check(v):
+                model.find_component(v).set_value(val[0])
+                # print(v, val)
+                model.find_component(v).setlb(val[1])
+                model.find_component(v).setub(val[2])
 
     def _restore_var_fixed_state(self, model):
         """Stores model variable fixed states"""
         for v, fixed in self.variableFixedStates.items():
-            if fixed:
-                model.find_component(v).fix()
-            else:
-                model.find_component(v).unfix()
+            if self._ignore_check(v):
+                if fixed:
+                    model.find_component(v).fix()
+                else:
+                    model.find_component(v).unfix()
 
     def _restore_constraint_state(self, model):
         """Stores model constraint states"""
         for v, active in self.constraintStates.items():
-            if active:
-                model.find_component(v).activate()
-            else:
-                model.find_component(v).deactivate()
+            if self._ignore_check(v):
+                if active:
+                    model.find_component(v).activate()
+                else:
+                    model.find_component(v).deactivate()
 
     def _restore_scaling_state(self, model):
         """Stores model scaling states"""
         for v, scale in self.variableScalingState.items():
-            if scale is None:
-                iscale.unset_scaling_factor(model.find_component(v))
-            else:
-                iscale.set_scaling_factor(model.find_component(v), scale)
+            if self._ignore_check(v):
+                if scale is None:
+                    iscale.unset_scaling_factor(model.find_component(v))
+                else:
+                    iscale.set_scaling_factor(model.find_component(v), scale)
+
         iscale.calculate_scaling_factors(model)

@@ -111,8 +111,13 @@ class modelStateStorage:
     def _store_scaling_state(self):
         """Stores model scaling states"""
         self.variableScalingState = ComponentMap()
+        self.constrainteScalingState = ComponentMap()
         for v in self.model.component_data_objects(Var):
             self.variableScalingState[v] = iscale.get_scaling_factor(v)
+        for v in self.model.component_data_objects(Constraint):
+            self.constrainteScalingState[
+                v
+            ] = iscale.get_constraint_transform_applied_scaling_factor(v)
 
     def _restore_vars(self, model):
         """Stores model variable states"""
@@ -149,5 +154,10 @@ class modelStateStorage:
                     iscale.unset_scaling_factor(model.find_component(v))
                 else:
                     iscale.set_scaling_factor(model.find_component(v), scale)
-
+        for v, active in self.constrainteScalingState.items():
+            if self._ignore_check(v):
+                if scale is None:
+                    iscale.constraint_scaling_transform_undo(model.find_component(v))
+                else:
+                    iscale.constraint_scaling_transform(model.find_component(v), scale)
         iscale.calculate_scaling_factors(model)

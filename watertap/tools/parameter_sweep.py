@@ -29,6 +29,8 @@ from idaes.core.solvers import get_solver
 from idaes.core.surrogate.pysmo import sampling
 from pyomo.common.collections import ComponentSet, ComponentMap
 from pyomo.common.tee import capture_output
+import ray
+from idaes.core.util import to_json, from_json
 
 # ================================================================
 
@@ -300,11 +302,13 @@ def _divide_combinations(global_combo_array, rank, num_procs):
 
 
 def _update_model_values(m, param_dict, values):
-
+    set_vals = {}
     for k, item in enumerate(param_dict.values()):
+        print(k, item)
 
-        param = item.pyomo_object
+        param = m.find_component(str(item.pyomo_object))
 
+        set_vals[str(item.pyomo_object)] = values[k]
         if param.is_variable_type():
             # Fix the single value to values[k]
             param.fix(values[k])
@@ -315,6 +319,24 @@ def _update_model_values(m, param_dict, values):
 
         else:
             raise RuntimeError(f"Unrecognized Pyomo object {param}")
+    return set_vals
+
+
+def _update_model_values_from_dict(m, values):
+    set_vals = {}
+    for k, value in values.items():
+        # print(k, value)
+        # param = item.pyomo_object
+        param = m.find_component(str(k))
+        # print(type(param))
+        # set_vals[str(item.pyomo_object)] = values[k]
+        if param.is_variable_type():
+            # Fix the single value to values[k]
+            param.fix(value)
+
+        elif param.is_parameter_type():
+            # Fix the single value to values[k]
+            param.set_value(value)
 
 
 # ================================================================
@@ -477,7 +499,7 @@ def _create_component_output_skeleton(component, num_samples):
 
     # Add information to this output that WILL NOT be written as part
     # of the file saving step.
-    comp_dict["_pyo_obj"] = component
+    # comp_dict["_pyo_obj"] = component
 
     return comp_dict
 
@@ -486,25 +508,71 @@ def _create_component_output_skeleton(component, num_samples):
 
 
 def _update_local_output_dict(
-    model, sweep_params, case_number, sweep_vals, run_successful, output_dict
+    model,
+    sweep_params,
+    case_number,
+    sweep_vals,
+    run_successful,
+    output_dict,
+    single_copy_mode=False,
 ):
 
-    # Get the inputs
+    copy_dict = {}
     op_ps_dict = output_dict["sweep_params"]
-    for key, item in sweep_params.items():
-        var_name = item.pyomo_object.name
-        op_ps_dict[var_name]["value"][case_number] = item.pyomo_object.value
+    copy_dict["sweep_params"] = {}
+    copy_dict["outputs"] = {}
 
-    # Get the outputs from model
+    for key, item in sweep_params.items():
+        # var_name = item.pyomo_object.name
+        value = model.find_component(key).value
+        if single_copy_mode:
+            copy_dict["sweep_params"][key] = {"value": value}
+        else:
+            op_ps_dict[key]["value"][case_number] = value
+
     if run_successful:
         for label, val in output_dict["outputs"].items():
-            output_dict["outputs"][label]["value"][case_number] = pyo.value(
-                val["_pyo_obj"]
-            )
-
+            # print(label, val)
+            val = pyo.value(model.find_component(label))  # .value
+            # try:
+            #     val = val.value
+            # except (IndexError):
+            #     print("ERRROR", label)
+            if single_copy_mode:
+                copy_dict["outputs"][label] = {"value": val}
+            else:
+                output_dict["outputs"][label]["value"][case_number] = val
     else:
         for label in output_dict["outputs"].keys():
-            output_dict["outputs"][label]["value"][case_number] = np.nan
+            if single_copy_mode:
+                copy_dict["outputs"][label] = {"value": np.nan}
+            else:
+                output_dict["outputs"][label]["value"][case_number] = np.nan
+    if single_copy_mode:
+        # print(copy_dict)
+        return copy_dict
+
+
+def _merge_copied_dicts(global_output_dict, dict_array):
+
+    global_output_dict["solve_successful"] = np.zeros(len(dict_array))
+    for case_number, case_dict in enumerate(dict_array):
+        for key in global_output_dict["sweep_params"].keys():
+            # print(global_output_dict["sweep_params"])
+            # print(dict_array)  # [case_number]["sweep_params"])
+            global_output_dict["sweep_params"][key]["value"][case_number] = dict_array[
+                case_number
+            ]["sweep_params"][key]["value"]
+
+        for key in global_output_dict["outputs"].keys():
+            global_output_dict["outputs"][key]["value"][case_number] = dict_array[
+                case_number
+            ]["outputs"][key]["value"]
+        # print(global_output_dict["solve_successful"])
+        global_output_dict["solve_successful"][case_number] = dict_array[case_number][
+            "solve_successful"
+        ]
+    return global_output_dict
 
 
 # ================================================================
@@ -692,32 +760,36 @@ def _write_outputs(output_dict, h5_results_file_name, txt_options="metadata"):
     _write_output_to_h5(output_dict, h5_results_file_name)
 
     # We will also create a companion txt file by default which contains
-    # the metadata of the h5 file in a user readable format.
-    txt_fname = h5_results_file_name + ".txt"
-    if "solve_successful" in output_dict.keys():
-        output_dict.pop("solve_successful")
-    if txt_options == "metadata":
-        my_dict = copy.deepcopy(output_dict)
-        for key, value in my_dict.items():
-            for subkey, subvalue in value.items():
-                subvalue.pop("value")
-    elif txt_options == "keys":
-        my_dict = {}
-        for key, value in output_dict.items():
-            my_dict[key] = list(value.keys())
-    else:
-        my_dict = output_dict
-
-    with open(txt_fname, "w") as log_file:
-        pprint.pprint(my_dict, log_file)
+    # # the metadata of the h5 file in a user readable format.
+    # txt_fname = h5_results_file_name + ".txt"
+    # if "solve_successful" in output_dict.keys():
+    #     output_dict.pop("solve_successful")
+    # if txt_options == "metadata":
+    #     my_dict = copy.deepcopy(output_dict)
+    #     for key, value in my_dict.items():
+    #         for subkey, subvalue in value.items():
+    #             subvalue.pop("value")
+    # elif txt_options == "keys":
+    #     my_dict = {}
+    #     for key, value in output_dict.items():
+    #         my_dict[key] = list(value.keys())
+    # else:
+    #     my_dict = output_dict
+    #
+    # with open(txt_fname, "w") as log_file:
+    #     pprint.pprint(my_dict, log_file)
 
 
 # ================================================================
 
 
 def _write_output_to_h5(output_dict, h5_results_file_name):
-
-    f = h5py.File(h5_results_file_name, "w")
+    if isinstance(h5_results_file_name, str):
+        file = try_getting_file(h5_results_file_name, "w")
+        f = file
+    else:
+        file = try_getting_file(h5_results_file_name[0], "a")
+        f = file[h5_results_file_name[1]]
     for key, item in output_dict.items():
         grp = f.create_group(key)
         if key != "solve_successful":
@@ -733,8 +805,14 @@ def _write_output_to_h5(output_dict, h5_results_file_name):
                             subgrp.create_dataset(subsubkey, data=subsubitem)
         elif key == "solve_successful":
             grp.create_dataset(key, data=output_dict[key])
-
-    f.close()
+    try:
+        f.close()
+    except:
+        pass
+    try:
+        file.close()
+    except:
+        pass
 
 
 # ================================================================
@@ -778,7 +856,6 @@ def _param_sweep_kernel(
     reinitialize_before_sweep,
     reinitialize_function,
     reinitialize_kwargs,
-    reinitialize_values,
 ):
 
     run_successful = False  # until proven otherwise
@@ -790,27 +867,29 @@ def _param_sweep_kernel(
                 "Reinitialization function was not specified. The model will not be reinitialized."
             )
         else:
-            for v, val in reinitialize_values.items():
-                if not v.fixed:
-                    v.set_value(val, skip_validation=True)
+            # for v, val in reinitialize_values.items():
+            #     if not v.fixed:
+            #         v.set_value(val, skip_validation=True)
             reinitialize_function(model, **reinitialize_kwargs)
 
     try:
         # Simulate/optimize with this set of parameter
-        with capture_output():
+        with capture_output() as output:
             results = optimize_function(model, **optimize_kwargs)
+        print("OUTPUT_solve_1", output.getvalue())
         pyo.assert_optimal_termination(results)
 
     except:
         # run_successful remains false. We try to reinitialize and solve again
         if reinitialize_function is not None:
-            for v, val in reinitialize_values.items():
-                if not v.fixed:
-                    v.set_value(val, skip_validation=True)
+            # for v, val in reinitialize_values.items():
+            #     if not v.fixed:
+            #         v.set_value(val, skip_validation=True)
             try:
                 reinitialize_function(model, **reinitialize_kwargs)
-                with capture_output():
+                with capture_output() as output:
                     results = optimize_function(model, **optimize_kwargs)
+                print("OUTPUT_solve_2", output.getvalue())
                 pyo.assert_optimal_termination(results)
 
             except:
@@ -828,8 +907,61 @@ def _param_sweep_kernel(
 # ================================================================
 
 
+@ray.remote(num_cpus=1, scheduling_strategy="SPREAD")
+def _param_step_kernel(
+    build_model,
+    build_kwargs,
+    sweep_params,
+    outputs,
+    local_values,
+    optimize_function,
+    optimize_kwargs,
+    reinitialize_function,
+    reinitialize_kwargs,
+    reinitialize_before_sweep,
+    reinitialize_values,
+    probe_function,
+    local_output_dict,
+):
+    model = build_model(**build_kwargs)
+    if reinitialize_values is None:
+        reinitialize_function(model, **reinitialize_kwargs)
+    else:
+        from_json(model, s=reinitialize_values)
+        print("UPDATED FROM JSON", reinitialize_before_sweep)
+        # reinitialize_before_sweep = False
+    # _update_model_values(model, sweep_params, local_values[case, :])
+    _update_model_values_from_dict(model, sweep_params)
+    run_successful = False
+    if probe_function is None or probe_function(model):
+        run_successful = _param_sweep_kernel(
+            model,
+            optimize_function,
+            optimize_kwargs,
+            reinitialize_before_sweep,
+            reinitialize_function,
+            reinitialize_kwargs,
+        )
+    else:
+        run_successful = False
+
+    copied_dict = _update_local_output_dict(
+        model,
+        sweep_params,
+        None,
+        None,
+        run_successful,
+        local_output_dict,
+        single_copy_mode=True,
+    )
+    copied_dict["solve_successful"] = run_successful
+    return copied_dict
+
+
 def _do_param_sweep(
     model,
+    build_model,
+    build_kwargs,
     sweep_params,
     outputs,
     local_values,
@@ -840,6 +972,7 @@ def _do_param_sweep(
     reinitialize_before_sweep,
     probe_function,
     comm,
+    use_ray_io,
 ):
 
     # Initialize space to hold results
@@ -854,47 +987,47 @@ def _do_param_sweep(
 
     local_solve_successful_list = []
 
-    if reinitialize_function is not None:
+    if reinitialize_function is not None and use_ray_io == False:
         reinitialize_values = ComponentMap()
         for v in model.component_data_objects(pyo.Var):
             reinitialize_values[v] = v.value
     else:
         reinitialize_values = None
-
+    if use_ray_io:
+        reinitialize_values = to_json(model, return_json_string=True)
+    # print("JSON VALUES", reinitialize_values)
     # ================================================================
     # Run all optimization cases
     # ================================================================
-
+    update_dicts = []
     for k in range(local_num_cases):
-        # Update the model values with a single combination from the parameter space
-        _update_model_values(model, sweep_params, local_values[k, :])
-
-        if probe_function is None or probe_function(model):
-            run_successful = _param_sweep_kernel(
-                model,
+        update_dicts.append(
+            _update_model_values(model, sweep_params, local_values[k, :])
+        )
+    solved_dict_array = ray.get(
+        [
+            _param_step_kernel.remote(
+                build_model,
+                build_kwargs,
+                update_dicts[k],
+                outputs,
+                local_values,
                 optimize_function,
                 optimize_kwargs,
-                reinitialize_before_sweep,
                 reinitialize_function,
                 reinitialize_kwargs,
+                reinitialize_before_sweep,
                 reinitialize_values,
+                probe_function,
+                local_output_dict,
             )
-        else:
-            run_successful = False
+            for k in range(local_num_cases)
+        ]
+    )
 
-        # Update the loop based on the reinitialization
-        _update_local_output_dict(
-            model,
-            sweep_params,
-            k,
-            local_values[k, :],
-            run_successful,
-            local_output_dict,
-        )
-
-        local_solve_successful_list.append(run_successful)
-
-    local_output_dict["solve_successful"] = local_solve_successful_list
+    # local_solve_successful_list.append(run_successful)
+    local_output_dict = _merge_copied_dicts(local_output_dict, solved_dict_array)
+    #    local_output_dict["solve_successful"] = local_solve_successful_list
 
     return local_output_dict
 
@@ -927,6 +1060,15 @@ def _aggregate_local_results(
 
 
 # ================================================================
+def try_getting_file(fileName, mode):
+    for i in range(1000):
+        try:
+            file = h5py.File(fileName, mode)
+            break
+        except:
+            print("failed getting file,trying again")
+            time.sleep(0.1)
+    return file
 
 
 def _save_results(
@@ -949,7 +1091,14 @@ def _save_results(
         if debugging_data_dir is not None:
             os.makedirs(debugging_data_dir, exist_ok=True)
         if h5_results_file_name is not None:
-            pathlib.Path(h5_results_file_name).parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(h5_results_file_name, str):
+                pathlib.Path(h5_results_file_name).parent.mkdir(
+                    parents=True, exist_ok=True
+                )
+            else:
+                pathlib.Path(h5_results_file_name[0]).parent.mkdir(
+                    parents=True, exist_ok=True
+                )
         if csv_results_file_name is not None:
             pathlib.Path(csv_results_file_name).parent.mkdir(
                 parents=True, exist_ok=True
@@ -970,24 +1119,45 @@ def _save_results(
             csv_results_file_name is not None,
         )
 
-    global_save_data = _write_to_csv(
-        sweep_params,
-        global_values,
-        global_results_dict,
-        global_results_arr,
-        rank,
-        csv_results_file_name,
-        interpolate_nan_outputs,
-    )
+    # global_save_data = _write_to_csv(
+    #     sweep_params,
+    #     global_values,
+    #     global_results_dict,
+    #     global_results_arr,
+    #     rank,
+    #     csv_results_file_name,
+    #     interpolate_nan_outputs,
+    # )
 
     if rank == 0 and h5_results_file_name is not None:
         # Save the data of output dictionary
+        print("saving h5 file")
         _write_outputs(global_results_dict, h5_results_file_name, txt_options="keys")
 
-    return global_save_data
+    # return global_save_data
 
 
 # ================================================================
+
+
+def setup_ray_cluster():
+    if ray.is_initialized() == False:
+        try:
+            print(os.environ["ip_head"], os.environ["redis_password"])
+            # if ray.is_initialized()
+            ray.init(
+                address=os.environ["ip_head"],
+                _redis_password=os.environ["redis_password"],
+            )
+            print("Nodes in the Ray cluster:")
+            print(ray.nodes())
+
+            print(ray.cluster_resources())
+        except (KeyError):
+            print("Did not find ray cluster address, running in local mode")
+            ray.init()
+    else:
+        print("ray already running")
 
 
 def parameter_sweep(
@@ -1003,10 +1173,13 @@ def parameter_sweep(
     reinitialize_before_sweep=False,
     probe_function=None,
     mpi_comm=None,
+    build_model=None,
+    build_kwargs=None,
     debugging_data_dir=None,
     interpolate_nan_outputs=False,
     num_samples=None,
     seed=None,
+    use_ray_io=False,
 ):
 
     """
@@ -1097,16 +1270,20 @@ def parameter_sweep(
                     by ``sweep_params`` and the remaining columns are the values of the
                     simulation identified by the ``outputs`` argument.
     """
-
-    # Get an MPI communicator
-    comm, rank, num_procs = _init_mpi(mpi_comm)
-
+    if use_ray_io == False:
+        # Get an MPI communicator
+        comm, rank, num_procs = _init_mpi(mpi_comm)
+    else:
+        comm = (None,)
+        rank = 0
+        num_procs = 1
+        setup_ray_cluster()
     if rank == 0:
         if h5_results_file_name is None and csv_results_file_name is None:
             warnings.warn(
                 "No results will be writen to disk as h5_results_file_name and csv_results_file_name are both None"
             )
-
+    print("h5_results_file_name", h5_results_file_name)
     # Convert sweep_params to LinearSamples
     sweep_params, sampling_type = _process_sweep_params(sweep_params)
 
@@ -1128,10 +1305,12 @@ def parameter_sweep(
     # Set up reinitialize_kwargs
     if reinitialize_kwargs is None:
         reinitialize_kwargs = dict()
-
+    print("defaults", build_kwargs, reinitialize_kwargs)
     # Do the Loop
     local_results_dict = _do_param_sweep(
         model,
+        build_model,
+        build_kwargs,
         sweep_params,
         outputs,
         local_values,
@@ -1142,6 +1321,7 @@ def parameter_sweep(
         reinitialize_before_sweep,
         probe_function,
         comm,
+        use_ray_io,
     )
 
     # Aggregate results on Master
@@ -1156,7 +1336,7 @@ def parameter_sweep(
     )
 
     # Save to file
-    global_save_data = _save_results(
+    _save_results(
         sweep_params,
         local_values,
         global_values,
@@ -1171,8 +1351,9 @@ def parameter_sweep(
         num_procs,
         interpolate_nan_outputs,
     )
-
-    return global_save_data
+    # if use_ray_io:
+    #     ray.shutdown()
+    # return global_save_data
 
 
 # ================================================================

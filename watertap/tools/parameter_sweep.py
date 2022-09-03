@@ -924,7 +924,7 @@ def _param_step_kernel(
     local_output_dict,
 ):
     model = build_model(**build_kwargs)
-    if reinitialize_values is None:
+    if reinitialize_values is None or reinitialize_before_sweep:
         reinitialize_function(model, **reinitialize_kwargs)
     else:
         from_json(model, s=reinitialize_values)

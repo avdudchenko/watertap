@@ -59,8 +59,6 @@ from watertap.costing import WaterTAPCosting
 from pyomo.common.collections import ComponentSet, ComponentMap
 
 
-from analysisWaterTAP.utils.model_state_tool import modelStateStorage
-
 from idaes.core.util import to_json, from_json
 
 

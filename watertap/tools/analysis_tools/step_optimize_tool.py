@@ -1,6 +1,6 @@
 import numpy as np
 from pyomo.common.collections import ComponentSet, ComponentMap
-from analysisWaterTAP.utils.model_state_tool import modelStateStorage
+from watertap.tools.analysis_tools.model_state_tool import modelStateStorage
 from pyomo.environ import (
     assert_optimal_termination,
 )
@@ -100,7 +100,6 @@ def try_stepping(
                 model.last_solved_state.perturb_unfixed_vars(perturb_unfixed_vars)
 
     if solved_successfull == False:
-
         for i in range(steps):
             print("taking step ", i, steps)
             for v, vals in step_vars.items():

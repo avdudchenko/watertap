@@ -236,6 +236,18 @@ def export_variables(flowsheet=None, exports=None):
         output_category="NF OPEX",
     )
     exports.add(
+        obj=fs.costing.disposal_cost,
+        name="Disposal cost",
+        ui_units=pyunits.USD_2020 / pyunits.m**3,
+        display_units="$/m^3",
+        rounding=4,
+        description="NF OPEX",
+        is_input=True,
+        input_category="NF OPEX",
+        is_output=True,
+        output_category="NF OPEX",
+    )
+    exports.add(
         obj=fs.product.max_hardness,
         name="Product quality",
         ui_units=pyunits.mg / pyunits.L,

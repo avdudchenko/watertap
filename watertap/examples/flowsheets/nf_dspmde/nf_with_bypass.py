@@ -10,6 +10,17 @@
 # "https://github.com/watertap-org/watertap/"
 #################################################################################
 
+from pyomo.environ import (
+    units as pyunits,
+    Objective,
+    Var,
+    Expression,
+    Constraint,
+    NonNegativeReals,
+    Param,
+    value,
+)
+
 from pyomo.network import Arc
 from idaes.core import (
     FlowsheetBlock,
@@ -18,12 +29,7 @@ from idaes.core import (
 from idaes.core.solvers import get_solver
 from idaes.core.util.initialization import propagate_state
 from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.models.unit_models import (
-    Mixer,
-    Separator,
-    Product,
-    Feed,
-)
+from idaes.models.unit_models import Mixer, Separator, Product, Feed
 from idaes.models.unit_models.mixer import MomentumMixingType, MixingType
 
 from pyomo.environ import ConcreteModel, TransformationFactory
@@ -33,7 +39,12 @@ from watertap.property_models.multicomp_aq_sol_prop_pack import (
 )
 from watertap.examples.flowsheets.nf_dspmde import nf
 
+import idaes.core.util.scaling as iscale
+
 from watertap.costing import WaterTAPCosting
+from watertap.tools.analysis_tools.model_state_tool import modelStateStorage
+
+# import analysisWaterTAP.utils.flowsheet_utils as fsTools
 
 
 def main():
@@ -42,7 +53,16 @@ def main():
     initialize(m, solver)
     unfix_opt_vars(m)
     nf.add_objective(m)
-    optimize(m, solver)
+    model_state = modelStateStorage(m)
+    json_string = model_state.get_dict_state()
+
+    m2 = build()
+    nf.add_objective(m2)
+    m2.state_after_box_solve = modelStateStorage(m2, restore_dict=json_string)
+    print("chnagedvars", m2.state_after_box_solve.find_changed_vars(m))
+    print("chnagedvars", m2.state_after_box_solve.find_changed_scailing(m))
+    m.fs.costing.disposal_cost.fix(0.2)
+    optimize(m2, solver)
     print("Optimal cost", m.fs.costing.LCOW.value)
     print("Optimal NF pressure (Bar)", m.fs.NF.pump.outlet.pressure[0].value / 1e5)
     print("Optimal area (m2)", m.fs.NF.nfUnit.area.value)
@@ -55,6 +75,9 @@ def main():
     print("Feed hardness (mg/L as CaCO3)", m.fs.feed.total_hardness.value)
     print("Product hardness (mg/L as CaCO3)", m.fs.product.total_hardness.value)
     print("Disposal hardness (mg/L as CaCO3)", m.fs.disposal.total_hardness.value)
+    for item in m.fs.costing.aggregate_flow_costs.items():
+        print(item[0], item[1].value)
+    print("disposal_cost", list(m.fs.costing.aggregate_flow_costs.values()))
     return m
 
 
@@ -116,19 +139,36 @@ def build():
     m.fs.mixer_to_product = Arc(
         source=m.fs.total_product_mixer.outlet, destination=m.fs.product.inlet
     )
+    m.fs.costing.disposal_cost = Var(
+        initialize=0.1,
+        doc="disposal cost",
+        units=pyunits.USD_2020 / pyunits.m**3,
+    )
+    m.fs.costing.disposal_cost.fix()
+    m.fs.costing.add_defined_flow("disposal cost", m.fs.costing.disposal_cost)
+    m.fs.costing.cost_flow(
+        pyunits.convert(
+            m.fs.disposal.properties[0].flow_vol_phase["Liq"],
+            pyunits.m**3 / pyunits.s,
+        ),
+        "disposal cost",
+    )
     m.fs.costing.cost_process()
     m.fs.costing.add_annual_water_production(m.fs.product.properties[0].flow_vol)
     m.fs.costing.add_LCOW(m.fs.product.properties[0].flow_vol)
     m.fs.costing.add_specific_energy_consumption(m.fs.product.properties[0].flow_vol)
-
+    iscale.set_scaling_factor(m.fs.costing.aggregate_flow_costs["disposal cost"], 1)
+    iscale.set_scaling_factor(m.fs.costing.total_capital_cost, 1 / 1000)
     TransformationFactory("network.expand_arcs").apply_to(m)
+
     return m
 
 
 def fix_init_vars(m):
     # fix intial guess for splitter
     m.fs.by_pass_splitter.split_fraction[0, "bypass"].fix(0.5)
-
+    m.fs.by_pass_splitter.split_fraction[0, "bypass"].setlb(0.01)
+    m.fs.by_pass_splitter.split_fraction[0, "bypass"].setub(1 - 0.01)
     # apply defualts ofr normal NF init
     nf.fix_init_vars(m)
 
@@ -182,6 +222,7 @@ def unfix_opt_vars(m):
 def optimize(m, solver=None):
     if solver is None:
         solver = get_solver()
+    result = nf.optimize(m, solver)
     result = nf.optimize(m, solver)
     return result
 

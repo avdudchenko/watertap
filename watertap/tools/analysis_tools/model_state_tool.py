@@ -14,7 +14,7 @@
 from pyomo.common.collections import ComponentSet, ComponentMap
 from pyomo.environ import Var, Constraint, Param, Expression
 import idaes.core.util.scaling as iscale
-from idaes.core.util import to_json, from_json
+
 import copy
 from numpy.random import default_rng
 
@@ -56,8 +56,8 @@ class modelStateStorage:
         self.ignoreList = ignoreList
         if restore_dict is not None:
             self.restore_from_dict(restore_dict)
-        else:
-            self.store_state()
+
+        self.store_state()
 
     def store_state(self):
         if self.restorVars:
@@ -105,6 +105,8 @@ class modelStateStorage:
             return_dict["variableFixedStatesDict"] = self.variableFixedStatesDict
         if self.restorConstraints:
             return_dict["constraintStatesDict"] = self.constraintStatesDict
+        if self.restoreParams:
+            return_dict["paramStatesDict"] = self.paramStatesDict
         if self.restoreScaling:
             return_dict["variableScalingStateDict"] = self.variableScalingStateDict
             return_dict[
@@ -122,7 +124,9 @@ class modelStateStorage:
         if "constraintStatesDict" in restore_dict:
             self.constraintStatesDict = restore_dict["constraintStatesDict"]
             self.restorConstraints = True
-
+        if "paramStatesDict" in restore_dict:
+            self.paramStatesDict = restore_dict["paramStatesDict"]
+            self.restorParams = True
         if "variableScalingStateDict" in restore_dict:
             self.variableScalingStateDict = restore_dict["variableScalingStateDict"]
             self.constrainteScalingStateDict = restore_dict[
@@ -151,7 +155,7 @@ class modelStateStorage:
             self.variableStatesDict[str(v)] = {"value": v.value, "lb": v.lb, "ub": v.ub}
 
     def _store_params(self):
-        """Stores model variable states"""
+        """Stores model param states"""
         self.paramStates = ComponentMap()
         self.paramStatesDict = {}
         for v in self.model.component_data_objects(Param):
@@ -166,24 +170,6 @@ class modelStateStorage:
             # p#rint(str(v))
             self.variableFixedStates[v] = v.fixed
             self.variableFixedStatesDict[str(v)] = v.fixed
-
-    def perturb_unfixed_vars(self, fraction=0.01):
-        random_gen = default_rng()
-        for v in self.model.component_data_objects(Var):
-            if v.fixed == False:
-                low_value = v.value * (1 - fraction)
-
-                high_value = v.value * (1 + fraction)
-                if high_value - low_value > 0:
-                    if v.ub is not None:
-                        if high_value > v.ub:
-                            high_value = v.ub * 0.99999
-                    if v.lb is not None:
-                        if low_value < v.lb:
-                            low_value = v.lb * 1.0001
-                    random_val = random_gen.uniform(low_value, high_value)
-                    v.value = random_val
-                # print(v, v.fixed)
 
     def _store_constraint_state(self):
         """Stores model constraint states"""
@@ -211,7 +197,7 @@ class modelStateStorage:
             self.constrainteScalingStateDict[str(v)] = scalin_value
 
     def _restore_vars(self, model):
-        """Stores model variable states"""
+        """Restores model variable states"""
         for v, val in self.variableStatesDict.items():
             if self._ignore_check(v):
                 if self.restorVarBounds:
@@ -223,13 +209,14 @@ class modelStateStorage:
                 # model.find_component(v).setub(val["ub"])
 
     def _restore_params(self, model):
-        """Stores model variable states"""
+        """Restores model param states"""
         for v, val in self.paramStatesDict.items():
             if self._ignore_check(v):
+                # print(v, val)
                 model.find_component(v).set_value(val["value"])
 
     def _restore_var_fixed_state(self, model):
-        """Stores model variable fixed states"""
+        """Restores model variable fixed states"""
         for v, fixed in self.variableFixedStatesDict.items():
             if self._ignore_check(v):
                 if fixed:
@@ -238,7 +225,7 @@ class modelStateStorage:
                     model.find_component(v).unfix()
 
     def _restore_constraint_state(self, model):
-        """Stores model constraint states"""
+        """Restores model constraint states"""
         for v, active in self.constraintStatesDict.items():
             if self._ignore_check(v):
                 try:
@@ -250,7 +237,7 @@ class modelStateStorage:
                     print("faile seeting state", v)
 
     def _restore_scaling_state(self, model):
-        """Stores model scaling states"""
+        """Restores model scaling states"""
         for v, scale in self.variableScalingStateDict.items():
             if self._ignore_check(v):
                 if scale is None:
@@ -263,9 +250,9 @@ class modelStateStorage:
                     iscale.constraint_scaling_transform_undo(model.find_component(v))
                 else:
                     iscale.constraint_scaling_transform(model.find_component(v), scale)
-        iscale.calculate_scaling_factors(model)
 
     def _eval_expressions(self, model):
+        """Evals model expressions"""
         for v in model.component_data_objects(Expression):
             try:
                 value(v)
@@ -273,6 +260,7 @@ class modelStateStorage:
                 pass
 
     def find_changed_vars(self, model):
+        """Finds changed vars"""
         self.changedVariables = ComponentMap()
         for v, val in self.variableStatesDict.items():
             cur_val = model.find_component(v).value
@@ -283,3 +271,19 @@ class modelStateStorage:
             if cur_val != val["value"]:
                 self.changedVariables[v] = (val["value"], cur_val)
         return self.changedVariables
+
+    def find_changed_scailing(self, model):
+        """Finds changed vars"""
+        self.changedVarScales = {}
+        for v, scale in self.variableScalingStateDict.items():
+            cur_scale = iscale.get_scaling_factor(model.find_component(v))
+            if scale != cur_scale:
+                self.changedVariables[v] = {scale, cur_scale}
+        self.changedConstraintScales = {}
+        for v, scale in self.constrainteScalingStateDict.items():
+            cur_scale = iscale.get_constraint_transform_applied_scaling_factor(
+                model.find_component(v)
+            )
+            if scale != cur_scale:
+                self.changedConstraintScales[v] = {scale, cur_scale}
+        return self.changedVarScales, self.changedConstraintScales

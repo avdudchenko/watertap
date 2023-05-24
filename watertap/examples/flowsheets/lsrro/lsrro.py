@@ -113,19 +113,22 @@ def run_lsrro_case(
     display_design(m)
     display_state(m)
 
-    optimize_set_up(
-        m,
-        set_default_bounds_on_module_dimensions,
-        water_recovery,
-        Cbrine,
-        A_case,
-        B_case,
-        AB_tradeoff,
-        A_value,
-        permeate_quality_limit,
-        AB_gamma_factor,
-        B_max,
-    )
+    def init(**kwargs):
+        initialize(m)
+        optimize_set_up(
+            m,
+            set_default_bounds_on_module_dimensions,
+            water_recovery,
+            Cbrine,
+            A_case,
+            B_case,
+            AB_tradeoff,
+            A_value,
+            permeate_quality_limit,
+            AB_gamma_factor,
+            B_max,
+        )
+
     res = solve(m, raise_on_failure=False, tee=False)
     print("\n***---Optimization results---***")
     if check_optimal_termination(res):
@@ -679,7 +682,6 @@ def set_operating_conditions(m, Cin=None, Qin=None):
 def _lsrro_mixer_guess_initializer(
     mixer, solvent_multiplier, solute_multiplier, optarg
 ):
-
     for vname in mixer.upstream.vars:
         if vname == "flow_mass_phase_comp":
             for time, phase, comp in mixer.upstream.vars[vname]:
@@ -785,7 +787,6 @@ def do_backward_initialization_pass(m, optarg):
 
 
 def initialize(m, verbose=True, solver=None):
-
     # ---initializing---
     # set up solvers
     if solver is None:
@@ -1136,7 +1137,6 @@ def display_state(m):
 
     print_state("Feed", m.fs.feed.outlet)
     for stage in m.fs.Stages:
-
         print_state(f"Primary Pump {stage} out", m.fs.PrimaryPumps[stage].outlet)
         if stage == m.fs.LastStage:
             pass

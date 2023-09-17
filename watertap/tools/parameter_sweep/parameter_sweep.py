@@ -770,6 +770,7 @@ class ParameterSweep(_ParameterSweepBase):
 
         # create the output skeleton based on the first set of results
         # we assume the results are in dict format
+        print(all_results)
         initial_results = all_results[0].results
 
         combined_results = copy.deepcopy(initial_results)

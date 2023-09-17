@@ -793,12 +793,15 @@ class ParameterSweep(_ParameterSweepBase):
                     continue
 
                 for subkey, subval in val.items():
-                    combined_results[key][subkey]["value"] = np.append(
-                        combined_results[key][subkey]["value"],
-                        copy.deepcopy(
-                            subval["value"],
-                        ),
-                    )
+                    try:
+                        combined_results[key][subkey]["value"] = np.append(
+                            combined_results[key][subkey]["value"],
+                            copy.deepcopy(
+                                subval["value"],
+                            ),
+                        )
+                    except KeyError:
+                        pass
 
         return combined_results
 

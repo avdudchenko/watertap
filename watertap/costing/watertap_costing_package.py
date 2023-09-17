@@ -252,7 +252,7 @@ class WaterTAPCostingData(FlowsheetCostingBlockData):
         )
         self.total_operating_cost = pyo.Var(
             initialize=1e3,
-            domain=pyo.Reals,
+            domain=pyo.NonNegativeReals,
             doc="Total operating cost",
             units=self.base_currency / self.base_period,
         )

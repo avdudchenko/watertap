@@ -35,7 +35,6 @@ from watertap.unit_models.electrodialysis_1D import Electrodialysis1D
 from watertap.costing import WaterTAPCosting
 from watertap.property_models.multicomp_aq_sol_prop_pack import MCASParameterBlock
 
-
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
@@ -57,6 +56,7 @@ def main():
 
     # Perform an optimization over selected variables
     initialize_system(m, solver=solver)
+
     optimize_system(
         m, solver=solver, checkpoint="solve flowsheet after optimizing system"
     )
@@ -123,12 +123,15 @@ def build():
         units=pyunits.meter**2,
         doc="Total membrane area for cem (or aem) in one stack",
     )
+    iscale.set_scaling_factor(m.fs.mem_area, 1)
     m.fs.product_salinity = Var(
         initialize=1, bounds=(0, 1000), units=pyunits.kg * pyunits.meter**-3
     )
+    iscale.set_scaling_factor(m.fs.product_salinity, 1)
     m.fs.disposal_salinity = Var(
         initialize=1, bounds=(0, 1e6), units=pyunits.kg * pyunits.meter**-3
     )
+    iscale.set_scaling_factor(m.fs.disposal_salinity, 1)
     m.fs.eq_product_salinity = Constraint(
         expr=m.fs.product_salinity
         == sum(
@@ -166,22 +169,10 @@ def build():
     )
     TransformationFactory("network.expand_arcs").apply_to(m)
 
-    # Scaling
-    m.fs.properties.set_default_scaling("flow_mol_phase_comp", 1, index=("Liq", "H2O"))
-    m.fs.properties.set_default_scaling(
-        "flow_mol_phase_comp", 5e1, index=("Liq", "Na_+")
-    )
-    m.fs.properties.set_default_scaling(
-        "flow_mol_phase_comp", 5e1, index=("Liq", "Cl_-")
-    )
-    iscale.set_scaling_factor(m.fs.EDstack.cell_width, 10)
-    iscale.set_scaling_factor(m.fs.EDstack.cell_length, 10)
-    iscale.calculate_scaling_factors(m)
     return m
 
 
 def set_operating_conditions(m):
-
     solver = get_solver()
 
     # ---specifications---
@@ -191,6 +182,21 @@ def set_operating_conditions(m):
     m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "H2O"].fix(4.8)
     m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "Na_+"].fix(1.476e-2)
     m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "Cl_-"].fix(1.476e-2)
+    m.fs.properties.set_default_scaling(
+        "flow_mol_phase_comp",
+        1 / m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "H2O"].value,
+        index=("Liq", "H2O"),
+    )
+    m.fs.properties.set_default_scaling(
+        "flow_mol_phase_comp",
+        1 / m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "Na_+"].value,
+        index=("Liq", "Na_+"),
+    )
+    m.fs.properties.set_default_scaling(
+        "flow_mol_phase_comp",
+        1 / m.fs.feed.properties[0].flow_mol_phase_comp["Liq", "Cl_-"].value,
+        index=("Liq", "Cl_-"),
+    )
 
     # Fix separator's split_fraction to 0.5, i.e., equal flows into the diluate and concentrate channels
     m.fs.separator.split_fraction[0, "inlet_diluate"].fix(0.5)
@@ -198,31 +204,83 @@ def set_operating_conditions(m):
     # Fix ED unit vars
     m.fs.EDstack.water_trans_number_membrane["cem"].fix(5.8)
     m.fs.EDstack.water_trans_number_membrane["aem"].fix(4.3)
+    for idx in m.fs.EDstack.water_trans_number_membrane:
+        iscale.set_scaling_factor(
+            m.fs.EDstack.water_trans_number_membrane[idx],
+            1 / m.fs.EDstack.water_trans_number_membrane[idx].value,
+        )
     m.fs.EDstack.water_permeability_membrane["cem"].fix(2.16e-14)
     m.fs.EDstack.water_permeability_membrane["aem"].fix(1.75e-14)
     m.fs.EDstack.voltage_applied.fix(5)
+    iscale.set_scaling_factor(
+        m.fs.EDstack.voltage_applied, 1 / m.fs.EDstack.voltage_applied[0].value
+    )
     m.fs.EDstack.electrodes_resistance.fix(0)
+
+    iscale.set_scaling_factor(m.fs.EDstack.electrodes_resistance, 1)
     m.fs.EDstack.cell_pair_num.fix(100)
+    iscale.set_scaling_factor(
+        m.fs.EDstack.cell_pair_num, 1 / m.fs.EDstack.cell_pair_num.value
+    )
     m.fs.EDstack.current_utilization.fix(1)
     m.fs.EDstack.channel_height.fix(2.7e-4)
+    iscale.set_scaling_factor(
+        m.fs.EDstack.channel_height, 1 / m.fs.EDstack.channel_height.value
+    )
     m.fs.EDstack.membrane_areal_resistance["cem"].fix(1.89e-4)
     m.fs.EDstack.membrane_areal_resistance["aem"].fix(1.77e-4)
+    for idx in m.fs.EDstack.membrane_areal_resistance:
+        iscale.set_scaling_factor(
+            m.fs.EDstack.membrane_areal_resistance[idx],
+            1 / m.fs.EDstack.membrane_areal_resistance[idx].value,
+        )
     m.fs.EDstack.cell_width.fix(0.1)
+    iscale.set_scaling_factor(m.fs.EDstack.cell_width, 1)
     m.fs.EDstack.cell_length.fix(0.79)
+    iscale.set_scaling_factor(m.fs.EDstack.cell_length, 1)
+    iscale.set_scaling_factor(
+        m.fs.EDstack.diluate.area,
+        1
+        / (
+            m.fs.EDstack.cell_length.value
+            * m.fs.EDstack.cell_width.value
+            * m.fs.EDstack.cell_pair_num.value
+        ),
+    )
+    iscale.set_scaling_factor(
+        m.fs.EDstack.concentrate.area,
+        1
+        / (
+            m.fs.EDstack.cell_length.value
+            * m.fs.EDstack.cell_width.value
+            * m.fs.EDstack.cell_pair_num.value
+        ),
+    )
     m.fs.EDstack.membrane_thickness["aem"].fix(1.3e-4)
     m.fs.EDstack.membrane_thickness["cem"].fix(1.3e-4)
+    for idx in m.fs.EDstack.membrane_thickness:
+        iscale.set_scaling_factor(
+            m.fs.EDstack.membrane_thickness[idx],
+            1 / m.fs.EDstack.membrane_thickness[idx].value,
+        )
     m.fs.EDstack.solute_diffusivity_membrane["cem", "Na_+"].fix(1.8e-10)
     m.fs.EDstack.solute_diffusivity_membrane["aem", "Na_+"].fix(1.25e-10)
     m.fs.EDstack.solute_diffusivity_membrane["cem", "Cl_-"].fix(1.8e-10)
     m.fs.EDstack.solute_diffusivity_membrane["aem", "Cl_-"].fix(1.25e-10)
+    for idx in m.fs.EDstack.solute_diffusivity_membrane:
+        iscale.set_scaling_factor(
+            m.fs.EDstack.solute_diffusivity_membrane[idx],
+            1 / m.fs.EDstack.solute_diffusivity_membrane[idx].value,
+        )
     m.fs.EDstack.ion_trans_number_membrane["cem", "Na_+"].fix(1)
     m.fs.EDstack.ion_trans_number_membrane["aem", "Na_+"].fix(0)
     m.fs.EDstack.ion_trans_number_membrane["cem", "Cl_-"].fix(0)
     m.fs.EDstack.ion_trans_number_membrane["aem", "Cl_-"].fix(1)
     m.fs.EDstack.spacer_porosity.fix(1)
-
+    iscale.set_scaling_factor(m.fs.EDstack.spacer_porosity, 1)
     # check zero degrees of freedom
     check_dof(m)
+    iscale.calculate_scaling_factors(m)
 
 
 def solve(blk, solver=None, checkpoint=None, tee=False, fail_flag=True):
@@ -234,7 +292,6 @@ def solve(blk, solver=None, checkpoint=None, tee=False, fail_flag=True):
 
 
 def initialize_system(m, solver=None):
-
     # set up solver
     if solver is None:
         solver = get_solver()
@@ -255,7 +312,6 @@ def initialize_system(m, solver=None):
 
 
 def optimize_system(m, solver=None, checkpoint=None, fail_flag=True):
-
     # Below is an example of optimizing the operational voltage and cell pair number (which translates to membrane use)
     # Define a system with zero dof
     set_operating_conditions(m)
@@ -285,7 +341,6 @@ def optimize_system(m, solver=None, checkpoint=None, fail_flag=True):
 
 
 def display_model_metrics(m):
-
     print("---Flow properties in feed, product and disposal---")
 
     fp = {

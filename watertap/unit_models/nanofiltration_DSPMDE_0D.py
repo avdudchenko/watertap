@@ -1950,6 +1950,9 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                         10 ** abs(self.permeate_side[t, x].charge_comp[j].value) - 1
                     ) / 10 ** abs(self.permeate_side[t, x].charge_comp[j].value)
 
+                    hfd = value(self.hindrance_factor_diffusive_comp[t, j])
+                    bs = value(self.partition_factor_born_solvation_comp[t, j])
+
                     sf = (
                         iscale.get_scaling_factor(
                             self.flux_mol_phase_comp[t, x, "Liq", "H2O"]

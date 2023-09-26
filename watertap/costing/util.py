@@ -113,11 +113,17 @@ def cost_rectifier(blk, power=100 * pyo.units.kW, ac_dc_conversion_efficiency=0.
 
     # create variables on cost block
     make_capital_cost_var(blk)
-    blk.ac_dc_conversion_efficiency = pyo.Expression(
-        expr=ac_dc_conversion_efficiency,
-        doc="fixing unit model vairable for upscaling required power considering "
-        "the efficiency of converting alternating to direct current",
+    blk.ac_dc_conversion_efficiency = pyo.Var(
+        initialize=0.9,
+        units=pyo.units.dimensionless,
+        doc="Rectifier cost coefficients",
     )
+    blk.ac_dc_conversion_efficiency.fix()
+    # blk.ac_dc_conversion_efficiency = pyo.Expression(
+    #     expr=blk.ac_dc_conversion_efficiency,
+    #     doc="fixing unit model vairable for upscaling required power considering "
+    #     "the efficiency of converting alternating to direct current",
+    # )
     blk.ac_power = pyo.Var(
         initialize=100,
         domain=pyo.NonNegativeReals,
@@ -142,7 +148,12 @@ def cost_rectifier(blk, power=100 * pyo.units.kW, ac_dc_conversion_efficiency=0.
     blk.capital_cost_rectifier = pyo.Var(
         initialize=100, units=blk.costing_package.base_currency
     )
-
+    blk.cost_adjust = pyo.Var(
+        initialize=1,
+        units=pyo.units.dimensionless,
+        doc="Rectifier cost coefficients",
+    )
+    blk.cost_adjust.fix()
     # refix variables to appropriate costing parameters
     for index, var in blk.rectifier_cost_coeff.items():
         var.fix(rectifier_cost_coeff[index])
@@ -158,6 +169,7 @@ def cost_rectifier(blk, power=100 * pyo.units.kW, ac_dc_conversion_efficiency=0.
             ),
             to_units=blk.costing_package.base_currency,
         )
+        * blk.cost_adjust
     )
 
     # cost electicity flow

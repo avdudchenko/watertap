@@ -2185,12 +2185,13 @@ class MCASStateBlockData(StateBlockData):
                             1
                             / 96485
                             * sum(
-                                iscale.get_scaling_factor(
-                                    self.elec_mobility_phase_comp["Liq", j]
-                                )
-                                ** -1
-                                * iscale.get_scaling_factor(
-                                    self.conc_mol_phase_comp["Liq", j]
+                                (
+                                    iscale.get_scaling_factor(
+                                        self.elec_mobility_phase_comp["Liq", j]
+                                    )
+                                    * iscale.get_scaling_factor(
+                                        self.conc_mol_phase_comp["Liq", j]
+                                    )
                                 )
                                 ** -1
                                 for j in self.params.ion_set
@@ -2217,11 +2218,13 @@ class MCASStateBlockData(StateBlockData):
                     )
                     sf_conc_mol_z = (
                         sum(
-                            iscale.get_scaling_factor(
-                                self.conc_mol_phase_comp["Liq", j]
+                            (
+                                iscale.get_scaling_factor(
+                                    self.conc_mol_phase_comp["Liq", j]
+                                )
+                                * iscale.get_scaling_factor(self.charge_comp[j])
                             )
                             ** -1
-                            * iscale.get_scaling_factor(self.charge_comp[j]) ** -1
                             for j in self.params.cation_set
                         )
                         ** -1
@@ -2274,9 +2277,13 @@ class MCASStateBlockData(StateBlockData):
             if iscale.get_scaling_factor(self.ionic_strength_molal) is None:
                 sf = (
                     sum(
-                        iscale.get_scaling_factor(self.molality_phase_comp["Liq", j])
+                        (
+                            iscale.get_scaling_factor(
+                                self.molality_phase_comp["Liq", j]
+                            )
+                            * iscale.get_scaling_factor(self.charge_comp[j]) ** -2
+                        )
                         ** -1
-                        * iscale.get_scaling_factor(self.charge_comp[j]) ** -1
                         for j in self.params.solute_set
                     )
                     ** -1

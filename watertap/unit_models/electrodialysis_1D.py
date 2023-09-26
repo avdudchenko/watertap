@@ -2649,6 +2649,190 @@ class Electrodialysis1DData(InitializationMixin, UnitModelBlockData):
                     c, iscale.get_scaling_factor(self.dl_thickness_x[ind])
                 )
 
+        for ind, c in self.eq_mass_transfer_term_diluate.items():
+            if ind[3] == "H2O":
+                sf_osm = (
+                    1e-3
+                    * 0.018
+                    * iscale.get_scaling_factor(self.water_permeability_membrane)
+                    * (
+                        (
+                            iscale.get_scaling_factor(
+                                self.diluate.properties[
+                                    (ind[0], ind[1])
+                                ].pressure_osm_phase[ind[2]]
+                            )
+                        )
+                        ** 2
+                        + (
+                            iscale.get_scaling_factor(
+                                self.diluate.properties[
+                                    (ind[0], ind[1])
+                                ].pressure_osm_phase[ind[2]]
+                            )
+                        )
+                        ** 2
+                    )
+                    ** 0.5
+                )
+                sf_eleosm = value(Constants.faraday_constant)
+                iscale.constraint_scaling_transform(
+                    c,
+                    (sf_osm**2 + sf_eleosm**2) ** 0.5
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
+            elif ind[3] in self.config.property_package.ion_set:
+                sf_diff = (
+                    iscale.get_scaling_factor(self.solute_diffusivity_membrane)
+                    / iscale.get_scaling_factor(self.membrane_thickness)
+                    * (
+                        (
+                            (
+                                iscale.get_scaling_factor(
+                                    self.concentrate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                            + (
+                                iscale.get_scaling_factor(
+                                    self.diluate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                        )
+                        ** 0.5
+                    )
+                )
+                sf_elemig = value(Constants.faraday_constant)
+                iscale.constraint_scaling_transform(
+                    c,
+                    (sf_diff**2 + sf_elemig**2) ** 0.5
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
+            else:
+                iscale.constraint_scaling_transform(
+                    c,
+                    iscale.get_scaling_factor(self.solute_diffusivity_membrane)
+                    / iscale.get_scaling_factor(self.membrane_thickness)
+                    * (
+                        (
+                            (
+                                iscale.get_scaling_factor(
+                                    self.concentrate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                            + (
+                                iscale.get_scaling_factor(
+                                    self.diluate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                        )
+                        ** 0.5
+                    )
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
+        for ind, c in self.eq_mass_transfer_term_concentrate.items():
+            if ind[3] == "H2O":
+                sf_osm = (
+                    1e-3
+                    * 0.018
+                    * iscale.get_scaling_factor(self.water_permeability_membrane)
+                    * (
+                        (
+                            iscale.get_scaling_factor(
+                                self.diluate.properties[
+                                    (ind[0], ind[1])
+                                ].pressure_osm_phase[ind[2]]
+                            )
+                        )
+                        ** 2
+                        + (
+                            iscale.get_scaling_factor(
+                                self.diluate.properties[
+                                    (ind[0], ind[1])
+                                ].pressure_osm_phase[ind[2]]
+                            )
+                        )
+                        ** 2
+                    )
+                    ** 0.5
+                )
+                sf_eleosm = value(Constants.faraday_constant)
+                iscale.constraint_scaling_transform(
+                    c,
+                    (sf_osm**2 + sf_eleosm**2) ** 0.5
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
+            elif ind[3] in self.config.property_package.ion_set:
+                sf_diff = (
+                    iscale.get_scaling_factor(self.solute_diffusivity_membrane)
+                    / iscale.get_scaling_factor(self.membrane_thickness)
+                    * (
+                        (
+                            (
+                                iscale.get_scaling_factor(
+                                    self.concentrate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                            + (
+                                iscale.get_scaling_factor(
+                                    self.diluate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                        )
+                        ** 0.5
+                    )
+                )
+                sf_elemig = value(Constants.faraday_constant)
+                iscale.constraint_scaling_transform(
+                    c,
+                    (sf_diff**2 + sf_elemig**2) ** 0.5
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
+            else:
+                iscale.constraint_scaling_transform(
+                    c,
+                    iscale.get_scaling_factor(self.solute_diffusivity_membrane)
+                    / iscale.get_scaling_factor(self.membrane_thickness)
+                    * (
+                        (
+                            (
+                                iscale.get_scaling_factor(
+                                    self.concentrate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                            + (
+                                iscale.get_scaling_factor(
+                                    self.diluate.properties[
+                                        (ind[0], ind[1])
+                                    ].conc_mol_phase_comp[ind[2], ind[3]]
+                                )
+                            )
+                            ** 2
+                        )
+                        ** 0.5
+                    )
+                    * iscale.get_scaling_factor(self.cell_pair_num),
+                )
         for ind, c in self.eq_power_electrical.items():
             iscale.constraint_scaling_transform(
                 c, iscale.get_scaling_factor(self.diluate.power_electrical_x[ind])

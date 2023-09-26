@@ -2049,19 +2049,19 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             sf = iscale.get_scaling_factor(self.flux_mol_phase_comp[t, x, p, j])
             iscale.constraint_scaling_transform(con, sf)
 
-        for (t, x, p, j), con in self.eq_interfacial_partitioning_feed.items():
-            hfd = value(self.hindrance_factor_diffusive_comp[t, j])
-            bs = value(self.partition_factor_born_solvation_comp[t, j])
-            fdc = value(self.partition_factor_donnan_comp_feed[t, x, j])
-            hinderence_factor = hfd * bs * fdc
-            iscale.constraint_scaling_transform(con, 1 / hinderence_factor)
+        # for (t, x, p, j), con in self.eq_interfacial_partitioning_feed.items():
+        #     hfd = value(self.hindrance_factor_diffusive_comp[t, j])
+        #     bs = value(self.partition_factor_born_solvation_comp[t, j])
+        #     fdc = value(self.partition_factor_donnan_comp_feed[t, x, j])
+        #     hinderence_factor = hfd * bs * fdc
+        #     iscale.constraint_scaling_transform(con, 1 / hinderence_factor)
 
-        for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
-            hfd = value(self.hindrance_factor_diffusive_comp[t, j])
-            bs = value(self.partition_factor_born_solvation_comp[t, j])
-            fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
-            hinderence_factor = hfd * bs * fdp
-            iscale.constraint_scaling_transform(con, 1 / hinderence_factor)
+        # for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
+        #     hfd = value(self.hindrance_factor_diffusive_comp[t, j])
+        #     bs = value(self.partition_factor_born_solvation_comp[t, j])
+        #     fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
+        #     hinderence_factor = hfd * bs * fdp
+        #     iscale.constraint_scaling_transform(con, 1 / hinderence_factor)
 
         for (t, p, j), con in self.eq_mass_transfer_feed.items():
             sf = iscale.get_scaling_factor(

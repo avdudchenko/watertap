@@ -2221,8 +2221,7 @@ class MCASStateBlockData(StateBlockData):
                                 self.conc_mol_phase_comp["Liq", j]
                             )
                             ** -1
-                            * iscale.get_scaling_factor(self.charge_comp["Liq", j])
-                            ** -1
+                            * iscale.get_scaling_factor(self.charge_comp[j]) ** -1
                             for j in self.params.cation_set
                         )
                         ** -1
@@ -2277,6 +2276,7 @@ class MCASStateBlockData(StateBlockData):
                     sum(
                         iscale.get_scaling_factor(self.molality_phase_comp["Liq", j])
                         ** -1
+                        * iscale.get_scaling_factor(self.charge_comp[j]) ** -1
                         for j in self.params.solute_set
                     )
                     ** -1

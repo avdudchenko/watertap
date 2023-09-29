@@ -524,10 +524,13 @@ class _ParameterSweepBase(ABC):
 
     def _check_exclusion_list(self, obj_name):
         include_obj = True
-        for exclude_block in self.config.exclude_output_blocks:
-            if exclude_block in obj_name:
-                include_obj = False
-                break
+        if self.config.exclude_output_blocks == None:
+            return True
+        else:
+            for exclude_block in self.config.exclude_output_blocks:
+                if exclude_block in obj_name:
+                    include_obj = False
+                    break
         return include_obj
 
     def _create_component_output_skeleton(self, component, num_samples):

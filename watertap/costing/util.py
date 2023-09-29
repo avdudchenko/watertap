@@ -203,12 +203,12 @@ def cost_rectifier(blk, power=100 * pyo.units.kW, ac_dc_conversion_efficiency=0.
     blk.capital_cost_rectifier = pyo.Var(
         initialize=100, units=blk.costing_package.base_currency
     )
-    blk.cost_adjust = pyo.Var(
+    blk.rectifier_cost_adjust = pyo.Var(
         initialize=1,
         units=pyo.units.dimensionless,
         doc="Rectifier cost coefficients",
     )
-    blk.cost_adjust.fix()
+    blk.rectifier_cost_adjust.fix()
     # refix variables to appropriate costing parameters
     for index, var in blk.rectifier_cost_coeff.items():
         var.fix(rectifier_cost_coeff[index])
@@ -224,7 +224,7 @@ def cost_rectifier(blk, power=100 * pyo.units.kW, ac_dc_conversion_efficiency=0.
             ),
             to_units=blk.costing_package.base_currency,
         )
-        * blk.cost_adjust
+        * blk.rectifier_cost_adjust
     )
 
     # cost electicity flow

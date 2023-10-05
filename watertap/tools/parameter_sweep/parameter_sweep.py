@@ -109,7 +109,14 @@ class _ParameterSweepBase(ABC):
             description="Keyword argument for the build outputs function for the parameter sweep.",
         ),
     )
-
+    CONFIG.declare(
+        "exclude_output_blocks",
+        ConfigValue(
+            default=None,
+            # domain=function,
+            description="List of key for blocks to exclude in output when build_outputs == None",
+        ),
+    )
     CONFIG.declare(
         "optimize_function",
         ConfigValue(
@@ -489,15 +496,20 @@ class _ParameterSweepBase(ABC):
                 (pyo.Var, pyo.Expression, pyo.Objective, pyo.Param), active=True
             ):
                 # We do however need to make sure that the short name for the inputs is used here
-                for param_name, sampling_obj in sweep_params.items():
-                    if pyo_obj.name == sampling_obj.pyomo_object.name:
-                        output_dict["outputs"][
-                            param_name
-                        ] = self._create_component_output_skeleton(pyo_obj, num_samples)
-                    else:
-                        output_dict["outputs"][
-                            pyo_obj.name
-                        ] = self._create_component_output_skeleton(pyo_obj, num_samples)
+                if self._check_exclusion_list(pyo_obj.name):
+                    for param_name, sampling_obj in sweep_params.items():
+                        if pyo_obj.name == sampling_obj.pyomo_object.name:
+                            output_dict["outputs"][
+                                param_name
+                            ] = self._create_component_output_skeleton(
+                                pyo_obj, num_samples
+                            )
+                        else:
+                            output_dict["outputs"][
+                                pyo_obj.name
+                            ] = self._create_component_output_skeleton(
+                                pyo_obj, num_samples
+                            )
 
         else:
             # Save only the outputs specified in the outputs dictionary
@@ -509,6 +521,17 @@ class _ParameterSweepBase(ABC):
                 )
 
         return output_dict
+
+    def _check_exclusion_list(self, obj_name):
+        include_obj = True
+        if self.config.exclude_output_blocks == None:
+            return True
+        else:
+            for exclude_block in self.config.exclude_output_blocks:
+                if exclude_block in obj_name:
+                    include_obj = False
+                    break
+        return include_obj
 
     def _create_component_output_skeleton(self, component, num_samples):
         comp_dict = {}
@@ -534,7 +557,6 @@ class _ParameterSweepBase(ABC):
     def _update_local_output_dict(
         self, model, sweep_params, case_number, run_successful, output_dict
     ):
-        # Get the inputs
         op_ps_dict = output_dict["sweep_params"]
         for key, item in sweep_params.items():
             # stores value actually applied to model, rather one assumed to be applied
@@ -783,7 +805,7 @@ class ParameterSweep(_ParameterSweepBase):
 
         # for each result, concat the "value" array of results into the
         # gathered results to combine them all
-        for result in all_results[1:]:
+        for i, result in enumerate(all_results[1:]):
             results = result.results
             for key, val in results.items():
                 if key == "solve_successful":
@@ -793,12 +815,34 @@ class ParameterSweep(_ParameterSweepBase):
                     continue
 
                 for subkey, subval in val.items():
+                    # lets catch any keys that don' exist in result[0] and
+                    # create empty array with expected length, after which we will add
+                    # additional values, or add nan's instead
+                    if subkey not in combined_results[key]:
+                        # create empty array, as non of results so far had this key
+                        combined_results[key][subkey] = {}
+                        for sub_subkey, value in subval.items():
+                            if sub_subkey == "value":
+                                combined_results[key][subkey]["value"] = (
+                                    np.zeros((i + 1) * len(subval["value"])) * np.nan
+                                )
+                            else:
+                                combined_results[key][subkey][sub_subkey] = value
                     combined_results[key][subkey]["value"] = np.append(
                         combined_results[key][subkey]["value"],
                         copy.deepcopy(
                             subval["value"],
                         ),
                     )
+                    # keepy track of our subchunk_length
+                    sub_chunk_length = len(subval["value"])
+                # make sure we add any empty value to missing keys
+                for subkey in combined_results[key]:
+                    if subkey not in val.keys():
+                        empty_chunk = np.zeros(sub_chunk_length) * np.nan
+                        combined_results[key][subkey]["value"] = np.append(
+                            combined_results[key][subkey]["value"], empty_chunk
+                        )
 
         return combined_results
 

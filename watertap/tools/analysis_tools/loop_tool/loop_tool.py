@@ -122,6 +122,7 @@ class loopTool:
             "init_defaults",
             "optimize_defaults",
             "build_outputs_kwargs",
+            "exclude_output_blocks",
         ]
         self._supported_loop_options = [
             "build_loop",
@@ -281,6 +282,7 @@ class loopTool:
                     self.update_sim_options(loop_type, loop_value, loop, None)
                     # creates directory dict with all options
                     if bool(self.sweep_params):
+                        # print(self.exclude_output_blocks)
                         sweep_directory[loop_value] = {
                             "simulation_setup": {
                                 "dir": local_dir,
@@ -300,6 +302,9 @@ class loopTool:
                                 "diff_params": copy.deepcopy(self.diff_params),
                                 "diff_samples": copy.deepcopy(self.diff_samples),
                                 "original_options_dict": copy.deepcopy(self.options),
+                                "exclude_output_blocks": copy.deepcopy(
+                                    self.exclude_output_blocks
+                                ),
                             }
                         }
 
@@ -445,6 +450,7 @@ class loopTool:
         self.sweep_params = {}
         self.diff_params = {}
         self.diff_samples = 0
+        self.exclude_output_blocks = None
 
         self._create_save_directory(self.data_dir)
         self.save_dir = self.data_dir + "/output"
@@ -489,11 +495,12 @@ class loopTool:
     def setup_param_sweep(self, value):
         """set up variables before a sweep run with parmater sweep
         tool, resets any of prior options"""
+        print(value)
         self.init_sim_options()
         self.options = value["original_options_dict"]
         self.build_default = value["build_defaults"]
         self.optimize_defaults = value["optimize_defaults"]
-
+        self.exclude_output_blocks = value["exclude_output_blocks"]
         self.init_defaults = value["init_defaults"]
         self.save_dir = value["dir"]
         self.h5_directory = value["h5dir"]
@@ -519,7 +526,7 @@ class loopTool:
         by those in the loops, overriding any defaults or adding new
         options to kwargs"""
         # check if user wants to reinit befoure sweep.
-
+        print(self.options)
         self.initialize_before_sweep = self.options.get(
             "initialize_before_sweep", False
         )
@@ -547,6 +554,10 @@ class loopTool:
         self.combined_init_defaults = {}
         self.combined_init_defaults.update(self.options.get("init_defaults", {}))
         self.combined_init_defaults.update(self.init_defaults)
+        # get exclude_output_blocks
+        self.exclude_output_blocks = None
+        self.exclude_output_blocks = self.options.get("exclude_output_blocks", None)
+        print("exclude_output_blocks", self.exclude_output_blocks)
 
     def _check_solution_exists(self):
         """hidden function to check if solution
@@ -626,6 +637,7 @@ class loopTool:
         ps_kwargs["initialize_function"] = self.initialize_function
         ps_kwargs["initialize_kwargs"] = self.combined_init_defaults
         ps_kwargs["initialize_before_sweep"] = self.initialize_before_sweep
+        ps_kwargs["exclude_output_blocks"] = self.exclude_output_blocks
 
         ps_kwargs[
             "update_sweep_params_before_init"
@@ -683,7 +695,7 @@ class loopTool:
 
         ps_kwargs["optimize_function"] = self.optimize_function
         ps_kwargs["optimize_kwargs"] = self.combined_optimize_defaults
-
+        ps_kwargs["exclude_output_blocks"] = self.exclude_output_blocks
         ps_kwargs["initialize_function"] = self.initialize_function
         ps_kwargs["initialize_kwargs"] = self.combined_init_defaults
         ps_kwargs["initialize_before_sweep"] = self.initialize_before_sweep

@@ -1157,26 +1157,36 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
                 self.target_ion_set, doc="Clark equation with fundamental constants"
             )  # Croll et al (2023), Eq.9
             def eq_clark_1(b, j):
-                denom = (
-                    1
-                    + (2 ** (b.freundlich_n - 1) - 1)
-                    * exp(
-                        idaesMath.smooth_min(  # this will prevent overflow, the denom * c_nrom == 1, and c_norm - 0-1
-                            (
-                                (
-                                    b.mass_transfer_coeff
-                                    * b.bed_depth
-                                    * (b.freundlich_n - 1)
-                                )
-                                / (b.bv_50 * b.vel_bed)
-                            )
-                            * (b.bv_50 - b.bv),
-                            600,
-                        )
-                    )
-                ) ** (1 / (b.freundlich_n - 1))
-                # return c0 == denom * cb
-                return denom * b.c_norm[j] == 1
+                # denom = (
+                #     1
+                #     + (2 ** (b.freundlich_n - 1) - 1)
+                #     * exp(
+                #         idaesMath.smooth_min(  # this will prevent overflow, the denom * c_nrom == 1, and c_norm - 0-1
+                #             (
+                #                 (
+                #                     b.mass_transfer_coeff
+                #                     * b.bed_depth
+                #                     * (b.freundlich_n - 1)
+                #                 )
+                #                 / (b.bv_50 * b.vel_bed)
+                #             )
+                #             * (b.bv_50 - b.bv),
+                #             100,
+                #         )
+                #     )
+                # ) ** (1 / (b.freundlich_n - 1))
+                # # # return c0 == denom * cb
+                # return denom * b.c_norm[j] == 1
+                l_side = (
+                    (b.mass_transfer_coeff * b.bed_depth * (b.freundlich_n - 1))
+                    / (b.bv_50 * b.vel_bed)
+                ) * (b.bv_50 - b.bv)
+
+                r_side = log(
+                    ((1 / b.c_norm[j]) ** (b.freundlich_n - 1) - 1)
+                    / (2 ** (b.freundlich_n - 1) - 1)
+                )
+                return l_side - r_side == 0
 
             @self.Constraint(
                 self.target_ion_set,
@@ -1479,7 +1489,7 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
         if isotherm == IsothermType.freundlich:
             for ind, c in self.eq_clark_1.items():
                 if iscale.get_scaling_factor(c) is None:
-                    iscale.constraint_scaling_transform(c, 1e-1)
+                    iscale.constraint_scaling_transform(c, 1e1)
 
             for ind, c in self.eq_traps.items():
                 if iscale.get_scaling_factor(c) is None:

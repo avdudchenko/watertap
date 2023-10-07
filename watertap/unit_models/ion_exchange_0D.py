@@ -43,7 +43,7 @@ from idaes.core.util.exceptions import InitializationError, ConfigurationError
 
 import idaes.core.util.scaling as iscale
 import idaes.logger as idaeslog
-
+import idaes.core.util.math as idaesMath
 from watertap.core import ControlVolume0DBlock, InitializationMixin
 from watertap.costing.unit_models.ion_exchange import cost_ion_exchange
 
@@ -406,7 +406,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
         )
 
         if self.config.regenerant != RegenerantChem.single_use:
-
             # Bed expansion is calculated as a fraction of the bed_depth
             # These coefficients are used to calculate that fraction (bed_expansion_frac) as a function of backwash rate (bw_rate, m/hr)
             # bed_expansion_frac = bed_expansion_A + bed_expansion_B * bw_rate + bed_expansion_C * bw_rate**2
@@ -625,7 +624,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
         )
 
         if self.config.isotherm == IsothermType.langmuir:
-
             self.resin_max_capacity = Var(
                 initialize=5,
                 units=pyunits.mol / pyunits.kg,
@@ -692,7 +690,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
             )
 
         if self.config.isotherm == IsothermType.freundlich:
-
             self.num_traps = 5  # TODO: make CONFIG option
             self.trap_disc = range(self.num_traps + 1)
             self.trap_index = self.trap_disc[1:]
@@ -796,7 +793,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
             return b.bed_vol_tot / b.number_columns
 
         if self.config.regenerant != RegenerantChem.single_use:
-
             tmp_dict = dict(**self.config.property_package_args)
             tmp_dict["has_phase_equilibrium"] = False
             tmp_dict["parameters"] = self.config.property_package
@@ -1165,11 +1161,18 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
                     1
                     + (2 ** (b.freundlich_n - 1) - 1)
                     * exp(
-                        (
-                            (b.mass_transfer_coeff * b.bed_depth * (b.freundlich_n - 1))
-                            / (b.bv_50 * b.vel_bed)
+                        idaesMath.smooth_min(  # this will prevent overflow, the denom * c_nrom == 1, and c_norm - 0-1
+                            (
+                                (
+                                    b.mass_transfer_coeff
+                                    * b.bed_depth
+                                    * (b.freundlich_n - 1)
+                                )
+                                / (b.bv_50 * b.vel_bed)
+                            )
+                            * (b.bv_50 - b.bv),
+                            600,
                         )
-                        * (b.bv_50 - b.bv)
                     )
                 ) ** (1 / (b.freundlich_n - 1))
                 # return c0 == denom * cb
@@ -1296,7 +1299,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
         init_log.info("Initialization Step 1b Complete.")
 
         if self.config.regenerant != RegenerantChem.single_use:
-
             state_args_regen = deepcopy(state_args)
 
             self.regeneration_stream.initialize(
@@ -1425,7 +1427,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
                 iscale.set_scaling_factor(self.mass_removed, 1e-6)
 
         if isotherm == IsothermType.freundlich:
-
             if iscale.get_scaling_factor(self.freundlich_n) is None:
                 iscale.set_scaling_factor(self.freundlich_n, 0.1)
 
@@ -1476,10 +1477,9 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
                     iscale.constraint_scaling_transform(c, sf)
 
         if isotherm == IsothermType.freundlich:
-
             for ind, c in self.eq_clark_1.items():
                 if iscale.get_scaling_factor(c) is None:
-                    iscale.constraint_scaling_transform(c, 1e6)
+                    iscale.constraint_scaling_transform(c, 1e-1)
 
             for ind, c in self.eq_traps.items():
                 if iscale.get_scaling_factor(c) is None:
@@ -1509,7 +1509,6 @@ class IonExchangeODData(InitializationMixin, UnitModelBlockData):
             )
 
     def _get_performance_contents(self, time_point=0):
-
         # TODO: add relevant Params, Expressions, differences for CONFIGs
         target_ion = self.config.target_ion
         var_dict = {}

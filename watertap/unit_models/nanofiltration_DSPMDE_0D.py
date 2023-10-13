@@ -598,11 +598,17 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         )
         def eq_interfacial_partitioning_feed(b, t, x, p, j):
             return (
-                b.pore_entrance[t, x].act_coeff_phase_comp[p, j]
-                * b.pore_entrance[t, x].conc_mol_phase_comp[p, j]
-                / (
-                    b.feed_side.properties_interface[t, x].act_coeff_phase_comp[p, j]
-                    * b.feed_side.properties_interface[t, x].conc_mol_phase_comp[p, j]
+                log(
+                    b.pore_entrance[t, x].act_coeff_phase_comp[p, j]
+                    * b.pore_entrance[t, x].conc_mol_phase_comp[p, j]
+                    / (
+                        b.feed_side.properties_interface[t, x].act_coeff_phase_comp[
+                            p, j
+                        ]
+                        * b.feed_side.properties_interface[t, x].conc_mol_phase_comp[
+                            p, j
+                        ]
+                    )
                 )
                 == b.partition_factor_steric_comp[t, j]
                 * b.partition_factor_born_solvation_comp[t, j]
@@ -619,11 +625,13 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         )
         def eq_interfacial_partitioning_permeate(b, t, x, p, j):
             return (
-                b.pore_exit[t, x].act_coeff_phase_comp[p, j]
-                * b.pore_exit[t, x].conc_mol_phase_comp[p, j]
-                / (
-                    b.permeate_side[t, x].act_coeff_phase_comp[p, j]
-                    * b.permeate_side[t, x].conc_mol_phase_comp[p, j]
+                log(
+                    b.pore_exit[t, x].act_coeff_phase_comp[p, j]
+                    * b.pore_exit[t, x].conc_mol_phase_comp[p, j]
+                    / (
+                        b.permeate_side[t, x].act_coeff_phase_comp[p, j]
+                        * b.permeate_side[t, x].conc_mol_phase_comp[p, j]
+                    )
                 )
                 == b.partition_factor_steric_comp[t, j]
                 * b.partition_factor_born_solvation_comp[t, j]
@@ -1198,12 +1206,9 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             doc="Born solvation contribution to partitioning",
         )
         def partition_factor_born_solvation_comp(b, t, j):
-            return exp(
-                -b.gibbs_solvation_comp[t, j]
-                / (
-                    Constants.boltzmann_constant
-                    * b.feed_side.properties_in[t].temperature
-                )
+            # return exp(
+            return -b.gibbs_solvation_comp[t, j] / (
+                Constants.boltzmann_constant * b.feed_side.properties_in[t].temperature
             )
 
         @self.Expression(
@@ -1213,7 +1218,8 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             doc="Donnan exclusion contribution to partitioning on feed side",
         )
         def partition_factor_donnan_comp_feed(b, t, x, j):
-            return exp(
+            # return exp(
+            return (
                 -b.feed_side.properties_in[t].charge_comp[j]
                 * Constants.faraday_constant
                 / (Constants.gas_constant * b.pore_entrance[t, x].temperature)
@@ -1227,7 +1233,8 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             doc="Donnan exclusion contribution to partitioning on permeate side",
         )
         def partition_factor_donnan_comp_permeate(b, t, x, j):
-            return exp(
+            # return exp(
+            return (
                 -b.feed_side.properties_in[t].charge_comp[j]
                 * Constants.faraday_constant
                 / (Constants.gas_constant * b.pore_exit[t, x].temperature)
@@ -1236,6 +1243,7 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                     - b.electric_potential[t, x, "permeate"]
                 )
             )
+            # )
 
         # Volumetric Water Flux at inlet and outlet ------------------------------------#
         @self.Expression(
@@ -2038,14 +2046,15 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                     value(self.permeate_side[t, x].charge_comp[j])
                 )
             iscale.constraint_scaling_transform(
-                con, 1 / (hindrance_factor * charge_reflection_multiplier)
+                con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
             )
 
         for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
             fsc = value(self.partition_factor_steric_comp[t, j])
             bs = value(self.partition_factor_born_solvation_comp[t, j])
             fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
-            hindrance_factor = fsc * bs * fdp
+            hindrance_factor = fsc * bs  # * fdp
+            print("fsc", fsc, bs, fdp)
             # we expect that there will be less ions at membrane with same charge as itself
             # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
             membrane_charge = value(self.membrane_charge_density[0])
@@ -2058,7 +2067,7 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                     value(self.permeate_side[t, x].charge_comp[j])
                 )
             iscale.constraint_scaling_transform(
-                con, 1 / (hindrance_factor * charge_reflection_multiplier)
+                con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
             )
 
         for (t, p, j), con in self.eq_mass_transfer_feed.items():

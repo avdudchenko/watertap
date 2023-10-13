@@ -599,7 +599,7 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         def eq_interfacial_partitioning_feed(b, t, x, p, j):
             return (
                 log(
-                    b.pore_entrance[t, x].act_coeff_phase_comp[p, j]
+                    (b.pore_entrance[t, x].act_coeff_phase_comp[p, j]
                     * b.pore_entrance[t, x].conc_mol_phase_comp[p, j]
                     / (
                         b.feed_side.properties_interface[t, x].act_coeff_phase_comp[
@@ -608,10 +608,9 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                         * b.feed_side.properties_interface[t, x].conc_mol_phase_comp[
                             p, j
                         ]
-                    )
+                    ))/b.partition_factor_steric_comp[t, j]
                 )
-                == log(b.partition_factor_steric_comp[t, j])
-                + b.partition_factor_born_solvation_comp[t, j]
+                ==  b.partition_factor_born_solvation_comp[t, j]
                 + b.partition_factor_donnan_comp_feed[t, x, j]
             )
 
@@ -626,15 +625,14 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         def eq_interfacial_partitioning_permeate(b, t, x, p, j):
             return (
                 log(
-                    b.pore_exit[t, x].act_coeff_phase_comp[p, j]
+                    (b.pore_exit[t, x].act_coeff_phase_comp[p, j]
                     * b.pore_exit[t, x].conc_mol_phase_comp[p, j]
                     / (
                         b.permeate_side[t, x].act_coeff_phase_comp[p, j]
                         * b.permeate_side[t, x].conc_mol_phase_comp[p, j]
-                    )
+                    ))/b.partition_factor_steric_comp[t, j]
                 )
-                == log(b.partition_factor_steric_comp[t, j])
-                + b.partition_factor_born_solvation_comp[t, j]
+                == b.partition_factor_born_solvation_comp[t, j]
                 + b.partition_factor_donnan_comp_permeate[t, x, j]
             )
 
@@ -1959,10 +1957,25 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                 if comp.is_solute():
                     # simply based on feed flow mol scaling
                     #
+                    membrane_charge = value(self.membrane_charge_density[0])
+                    if (
+                        membrane_charge * value(self.permeate_side[t, x].charge_comp[j])
+                        > 0
+                    ):
+                        charge_reflection_multiplier = 10 ** -abs(
+                            value(self.permeate_side[t, x].charge_comp[j])
+                        )
+                    else:
+                        charge_reflection_multiplier = 10 ** abs(
+                            value(self.permeate_side[t, x].charge_comp[j])
+                        )
                     sf = iscale.get_scaling_factor(
                         self.feed_side.properties_in[t].flow_mol_phase_comp["Liq", j]
                     )
-                    iscale.set_scaling_factor(v, sf)
+                    print(t, x, p, j, sf, charge_reflection_multiplier)
+                    iscale.set_scaling_factor(
+                        v, sf
+                    )  # * charge_reflection_multiplier * 10)
 
         for (t, p, j), v in self.flux_mol_phase_comp_avg.items():
             if iscale.get_scaling_factor(v) is None:
@@ -2030,10 +2043,11 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             iscale.constraint_scaling_transform(con, sf)
 
         # for (t, x, p, j), con in self.eq_interfacial_partitioning_feed.items():
-        #     fsc = value(self.partition_factor_steric_comp[t, j])
+        #     fsc = value(log(self.partition_factor_steric_comp[t, j]))
         #     bs = value(self.partition_factor_born_solvation_comp[t, j])
         #     fdc = value(self.partition_factor_donnan_comp_feed[t, x, j])
-        #     hindrance_factor = fsc * bs * fdc
+        #     hindrance_factor = fsc + bs
+        #     print("fsc", fsc, bs, fdc)
         #     # we expect that there will be less ions at the membrane with same charge
         #     # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
         #     membrane_charge = value(self.membrane_charge_density[0])
@@ -2045,15 +2059,13 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         #         charge_reflection_multiplier = 10 ** abs(
         #             value(self.permeate_side[t, x].charge_comp[j])
         #         )
-        #     iscale.constraint_scaling_transform(
-        #         con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
-        #     )
+        #     iscale.constraint_scaling_transform(con, 1 / abs(hindrance_factor))
 
         # for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
-        #     fsc = value(self.partition_factor_steric_comp[t, j])
+        #     fsc = value(log(self.partition_factor_steric_comp[t, j]))
         #     bs = value(self.partition_factor_born_solvation_comp[t, j])
         #     fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
-        #     hindrance_factor = fsc * bs  # * fdp
+        #     hindrance_factor = fsc + bs  # * fdp
         #     print("fsc", fsc, bs, fdp)
         #     # we expect that there will be less ions at membrane with same charge as itself
         #     # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
@@ -2066,9 +2078,7 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
         #         charge_reflection_multiplier = 10 ** abs(
         #             value(self.permeate_side[t, x].charge_comp[j])
         #         )
-        #     iscale.constraint_scaling_transform(
-        #         con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
-        #     )
+        #     iscale.constraint_scaling_transform(con, 1 / abs(hindrance_factor))
 
         for (t, p, j), con in self.eq_mass_transfer_feed.items():
             sf = iscale.get_scaling_factor(

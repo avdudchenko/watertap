@@ -610,9 +610,9 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                         ]
                     )
                 )
-                == b.partition_factor_steric_comp[t, j]
-                * b.partition_factor_born_solvation_comp[t, j]
-                * b.partition_factor_donnan_comp_feed[t, x, j]
+                == log(b.partition_factor_steric_comp[t, j])
+                + b.partition_factor_born_solvation_comp[t, j]
+                + b.partition_factor_donnan_comp_feed[t, x, j]
             )
 
         # 2. Permeate solution/membrane equilibrium, DOF= Nj * 2 for inlet/outlet
@@ -633,9 +633,9 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                         * b.permeate_side[t, x].conc_mol_phase_comp[p, j]
                     )
                 )
-                == b.partition_factor_steric_comp[t, j]
-                * b.partition_factor_born_solvation_comp[t, j]
-                * b.partition_factor_donnan_comp_permeate[t, x, j]
+                == log(b.partition_factor_steric_comp[t, j])
+                + b.partition_factor_born_solvation_comp[t, j]
+                + b.partition_factor_donnan_comp_permeate[t, x, j]
             )
 
         # 4. Charge balance inside the membrane, DOF=N nodes across membrane thickness *2 for inlet/outlet: N=2, DOF=4
@@ -2029,46 +2029,46 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
             sf = iscale.get_scaling_factor(self.flux_mol_phase_comp[t, x, p, j])
             iscale.constraint_scaling_transform(con, sf)
 
-        for (t, x, p, j), con in self.eq_interfacial_partitioning_feed.items():
-            fsc = value(self.partition_factor_steric_comp[t, j])
-            bs = value(self.partition_factor_born_solvation_comp[t, j])
-            fdc = value(self.partition_factor_donnan_comp_feed[t, x, j])
-            hindrance_factor = fsc * bs * fdc
-            # we expect that there will be less ions at the membrane with same charge
-            # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
-            membrane_charge = value(self.membrane_charge_density[0])
-            if membrane_charge * value(self.permeate_side[t, x].charge_comp[j]) > 0:
-                charge_reflection_multiplier = 10 ** -abs(
-                    value(self.permeate_side[t, x].charge_comp[j])
-                )
-            else:
-                charge_reflection_multiplier = 10 ** abs(
-                    value(self.permeate_side[t, x].charge_comp[j])
-                )
-            iscale.constraint_scaling_transform(
-                con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
-            )
+        # for (t, x, p, j), con in self.eq_interfacial_partitioning_feed.items():
+        #     fsc = value(self.partition_factor_steric_comp[t, j])
+        #     bs = value(self.partition_factor_born_solvation_comp[t, j])
+        #     fdc = value(self.partition_factor_donnan_comp_feed[t, x, j])
+        #     hindrance_factor = fsc * bs * fdc
+        #     # we expect that there will be less ions at the membrane with same charge
+        #     # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
+        #     membrane_charge = value(self.membrane_charge_density[0])
+        #     if membrane_charge * value(self.permeate_side[t, x].charge_comp[j]) > 0:
+        #         charge_reflection_multiplier = 10 ** -abs(
+        #             value(self.permeate_side[t, x].charge_comp[j])
+        #         )
+        #     else:
+        #         charge_reflection_multiplier = 10 ** abs(
+        #             value(self.permeate_side[t, x].charge_comp[j])
+        #         )
+        #     iscale.constraint_scaling_transform(
+        #         con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
+        #     )
 
-        for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
-            fsc = value(self.partition_factor_steric_comp[t, j])
-            bs = value(self.partition_factor_born_solvation_comp[t, j])
-            fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
-            hindrance_factor = fsc * bs  # * fdp
-            print("fsc", fsc, bs, fdp)
-            # we expect that there will be less ions at membrane with same charge as itself
-            # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
-            membrane_charge = value(self.membrane_charge_density[0])
-            if membrane_charge * value(self.permeate_side[t, x].charge_comp[j]) > 0:
-                charge_reflection_multiplier = 10 ** -abs(
-                    value(self.permeate_side[t, x].charge_comp[j])
-                )
-            else:
-                charge_reflection_multiplier = 10 ** abs(
-                    value(self.permeate_side[t, x].charge_comp[j])
-                )
-            iscale.constraint_scaling_transform(
-                con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
-            )
+        # for (t, x, p, j), con in self.eq_interfacial_partitioning_permeate.items():
+        #     fsc = value(self.partition_factor_steric_comp[t, j])
+        #     bs = value(self.partition_factor_born_solvation_comp[t, j])
+        #     fdp = value(self.partition_factor_donnan_comp_permeate[t, x, j])
+        #     hindrance_factor = fsc * bs  # * fdp
+        #     print("fsc", fsc, bs, fdp)
+        #     # we expect that there will be less ions at membrane with same charge as itself
+        #     # e.g., negative ions are repulsed by negative membranes, but positive ions are attracted
+        #     membrane_charge = value(self.membrane_charge_density[0])
+        #     if membrane_charge * value(self.permeate_side[t, x].charge_comp[j]) > 0:
+        #         charge_reflection_multiplier = 10 ** -abs(
+        #             value(self.permeate_side[t, x].charge_comp[j])
+        #         )
+        #     else:
+        #         charge_reflection_multiplier = 10 ** abs(
+        #             value(self.permeate_side[t, x].charge_comp[j])
+        #         )
+        #     iscale.constraint_scaling_transform(
+        #         con, 1 / abs(hindrance_factor * charge_reflection_multiplier)
+        #     )
 
         for (t, p, j), con in self.eq_mass_transfer_feed.items():
             sf = iscale.get_scaling_factor(

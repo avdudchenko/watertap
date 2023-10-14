@@ -614,7 +614,8 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                     / b.partition_factor_steric_comp[t, j]
                 )
                 - b.partition_factor_born_solvation_comp[t, j]
-                - b.partition_factor_donnan_comp_feed[t, x, j] == 0
+                - b.partition_factor_donnan_comp_feed[t, x, j]
+                == 0
             )
 
         # 2. Permeate solution/membrane equilibrium, DOF= Nj * 2 for inlet/outlet
@@ -639,7 +640,8 @@ class NanofiltrationData(InitializationMixin, UnitModelBlockData):
                     / b.partition_factor_steric_comp[t, j]
                 )
                 - b.partition_factor_born_solvation_comp[t, j]
-                - b.partition_factor_donnan_comp_permeate[t, x, j] == 0
+                - b.partition_factor_donnan_comp_permeate[t, x, j]
+                == 0
             )
 
         # 4. Charge balance inside the membrane, DOF=N nodes across membrane thickness *2 for inlet/outlet: N=2, DOF=4

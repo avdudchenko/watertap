@@ -347,7 +347,7 @@ class OLIApi:
         session=None,
     ):
         """ """
-        print("running sample #{}".format(sample_index))
+        print("running {} sample #{}".format(mode, sample_index))
         if not bool(flash_method):
             raise IOError(
                 " Specify a flash method to use from {self.valid_flashes.keys()}."

@@ -44,6 +44,9 @@
 
 __author__ = "Adam Atia, Adi Bannady, Paul Vecchiarelli"
 
+import asyncio
+import aiohttp
+
 import logging
 
 from os.path import isfile, islink
@@ -331,6 +334,87 @@ class OLIApi:
         else:
             headers = {"authorization": "Bearer " + self.credential_manager.jwt_token}
         requests.request("DELETE", endpoint, headers=headers, data={})
+
+    async def submit_call(
+        self,
+        mode="POST",
+        flash_method=None,
+        dbs_file_id=None,
+        input_params=None,
+        sample_index=None,
+        poll_time=1.0,
+        max_request=1000,
+        session=None,
+    ):
+        """ """
+        print("running sample #{}".format(sample_index))
+        if not bool(flash_method):
+            raise IOError(
+                " Specify a flash method to use from {self.valid_flashes.keys()}."
+                + " Run self.get_valid_flash_methods to see a list and required inputs."
+            )
+
+        if not bool(dbs_file_id):
+            raise IOError("Specify a DBS file id to flash.")
+
+        if self.credential_manager.access_key:
+            headers = {"authorization": "API-KEY " + self.credential_manager.access_key}
+        else:
+            headers = {"authorization": "Bearer " + self.credential_manager.jwt_token}
+
+        headers["content-type"] = "application/json"
+        if mode == "POST":
+            endpoint = f"{self.credential_manager.engine_url}flash/{dbs_file_id}/{flash_method}"
+            if bool(input_params):
+                data = json.dumps(input_params)
+            else:
+                raise IOError("Specify flash calculation input to use this function.")
+
+            async with session.post(endpoint, headers=headers, data=data) as response:
+                # result = response.text
+                # print(response.status)
+                if response.status == 200:
+                    return {sample_index: await response.json()}
+                else:
+                    return {sample_index: False}
+
+        if mode == "GET":
+            data = ""
+            endpoint = input_params
+            # print("EDNPOINT", endpoint)
+            async with session.get(endpoint, headers=headers, data=data) as response:
+                # result = response.text
+
+                if response.status == 200:
+                    return {sample_index: await response.json()}
+                else:
+                    return {sample_index: False}
+
+    def get_result_link(self, result):
+        if bool(result):
+            if result["status"] == "SUCCESS":
+                if "data" in result:
+                    if "status" in result["data"]:
+                        if (
+                            result["data"]["status"] == "IN QUEUE"
+                            or result["data"]["status"] == "IN PROGRESS"
+                        ):
+                            if "resultsLink" in result["data"]:
+                                results_link = result["data"]["resultsLink"]
+                                return results_link
+        return False
+
+    def check_progress(self, result):
+        if "status" in result:
+            status = result["status"]
+            _logger.debug(status)
+            if status == "PROCESSED" or status == "FAILED":
+                if "data" in result:
+                    return result["data"]
+                else:
+                    return False
+            elif status == "IN QUEUE" or status == "IN PROGRESS":
+                return True
 
     def call(
         self,

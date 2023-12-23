@@ -47,7 +47,8 @@ __author__ = "Oluwamayowa Amusat, Paul Vecchiarelli"
 import logging
 
 import yaml
-
+import asyncio
+import aiohttp
 from copy import deepcopy
 from itertools import product
 from pyomo.environ import units as pyunits
@@ -72,6 +73,10 @@ handler.setFormatter(formatter)
 _logger.addHandler(handler)
 _logger.setLevel(logging.INFO)
 # TODO: consider config for file_name for each writing method
+
+import time
+import asyncio
+import aiohttp
 
 
 class Flash:
@@ -286,6 +291,7 @@ class Flash:
         initial_input,
         survey=None,
         file_name=None,
+        async_mode=False,
     ):
         """
         Conducts a composition survey with a given set of clones.
@@ -303,7 +309,6 @@ class Flash:
         if survey is None:
             _logger.info("Running single flash calculation")
             result = {0: oliapi_instance.call(flash_method, dbs_file_id, initial_input)}
-
         else:
             clones = self.modify_inputs(
                 initial_flash_input=initial_input,
@@ -311,12 +316,87 @@ class Flash:
                 flash_method=flash_method,
             )
             _logger.info("Running flash survey with {} samples".format(len(clones)))
-            result = {}
-            for k, v in clones.items():
-                _logger.info("Running sample #{}".format(k))
-                result[k] = oliapi_instance.call(flash_method, dbs_file_id, v)
+            if async_mode:
 
-        _logger.info("Completed running flash calculations")
+                async def submit_requests():
+                    async with aiohttp.ClientSession() as client:
+                        return await asyncio.gather(
+                            *[
+                                asyncio.ensure_future(
+                                    oliapi_instance.submit_call(
+                                        flash_method=flash_method,
+                                        dbs_file_id=dbs_file_id,
+                                        mode="POST",
+                                        input_params=v,
+                                        sample_index=k,
+                                        session=client,
+                                    )
+                                )
+                                for k, v in clones.items()
+                            ]
+                        )
+
+                loop = asyncio.get_event_loop()
+                async_results = loop.run_until_complete(submit_requests())
+
+                result = {}
+                for d in async_results:
+                    result.update(d)
+                result_links = {
+                    k: oliapi_instance.get_result_link(item)
+                    for k, item in result.items()
+                }
+                result_progress = {
+                    k: oliapi_instance.check_progress(item)
+                    for k, item in result.items()
+                }
+
+                while True:
+                    time.sleep(1)
+
+                    async def run_survey_async():
+                        async with aiohttp.ClientSession() as client:
+                            run_list = []
+                            for k, item in result_progress.items():
+                                if item != True and item != False:
+                                    run_list.append(
+                                        asyncio.ensure_future(
+                                            oliapi_instance.submit_call(
+                                                flash_method=flash_method,
+                                                dbs_file_id=dbs_file_id,
+                                                mode="GET",
+                                                input_params=result_links[k],
+                                                sample_index=k,
+                                                session=client,
+                                            )
+                                        )
+                                    )
+                            return await asyncio.gather(*run_list)
+
+                    loop = asyncio.get_event_loop()
+                    async_results = loop.run_until_complete(run_survey_async())
+
+                    for item in async_results:
+                        result.update(item)
+
+                    result = {
+                        k: oliapi_instance.check_progress(item)
+                        for k, item in result.items()
+                    }
+
+                    _logger.info(
+                        "Still waiting for {} samples".format(
+                            sum([result[k] == True for k in result.keys()])
+                        )
+                    )
+                    if sum([result[k] == True for k in result.keys()]) == False:
+                        break
+            else:
+                result = {}
+                for k, v in clones.items():
+                    _logger.info("Running sample #{}".format(k))
+                    result[k] = oliapi_instance.call(flash_method, dbs_file_id, v)
+            _logger.info("Completed running flash calculations")
         if file_name:
             self.write_output_to_yaml(result, file_name)
 

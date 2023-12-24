@@ -371,10 +371,12 @@ class OLIApi:
                 raise IOError("Specify flash calculation input to use this function.")
 
             async with session.post(endpoint, headers=headers, data=data) as response:
-                # result = response.text
-                # print(response.status)
                 if response.status == 200:
-                    return {sample_index: await response.json()}
+                    result = {sample_index: await response.json()}
+                    print(
+                        "Received response for {} sample #{}".format(mode, sample_index)
+                    )
+                    return result
                 else:
                     return {sample_index: False}
 
@@ -386,7 +388,11 @@ class OLIApi:
                 # result = response.text
 
                 if response.status == 200:
-                    return {sample_index: await response.json()}
+                    result = {sample_index: await response.json()}
+                    print(
+                        "Received response for {} sample #{}".format(mode, sample_index)
+                    )
+                    return result
                 else:
                     return {sample_index: False}
 

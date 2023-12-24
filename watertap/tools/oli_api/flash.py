@@ -317,6 +317,7 @@ class Flash:
             )
             _logger.info("Running flash survey with {} samples".format(len(clones)))
             if async_mode:
+                submit_time = time.time()
 
                 async def submit_requests():
                     async with aiohttp.ClientSession() as client:
@@ -350,7 +351,12 @@ class Flash:
                     k: oliapi_instance.check_progress(item)
                     for k, item in result.items()
                 }
-
+                _logger.info(
+                    "Submitted all {} jobs to OLIAPI, took {} seconds".format(
+                        len(clones), time.time() - submit_time
+                    )
+                )
+                get_time = time.time()
                 while True:
                     time.sleep(1)
 
@@ -391,6 +397,11 @@ class Flash:
                     )
                     if sum([result[k] == True for k in result.keys()]) == False:
                         break
+                _logger.info(
+                    "Received all {} jobs from OLIAPI, took {} seconds".format(
+                        len(clones), time.time() - get_time
+                    )
+                )
             else:
                 result = {}
                 for k, v in clones.items():

@@ -68,10 +68,13 @@ from watertap.tools.oli_api.util.fixed_keys_dict import (
 
 _logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
-formatter = logging.Formatter("OLIAPI - %(levelname)s - %(message)s")
+formatter = logging.Formatter(
+    "OLIAPI -%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S"
+)
 handler.setFormatter(formatter)
 _logger.addHandler(handler)
-_logger.setLevel(logging.INFO)
+_logger.setLevel(logging.DEBUG)
+
 # TODO: consider config for file_name for each writing method
 
 import time
@@ -381,9 +384,10 @@ class Flash:
 
                     loop = asyncio.get_event_loop()
                     async_results = loop.run_until_complete(run_survey_async())
-
+                    # _logger.info("Got {} async results!".format(len(async_results)))
                     for item in async_results:
                         result.update(item)
+                    _logger.info("Got {} async results!".format(len(result)))
 
                     result = {
                         k: oliapi_instance.check_progress(item)
@@ -432,15 +436,19 @@ class Flash:
                     if param["name"] in survey[i].keys():
                         param.update({"value": survey[i][param["name"]]})
             elif flash_method == "isothermal":
-                for param in survey:
-                    path == None
+                for param in survey[i]:
                     if param in ["Temperature", "Pressure"]:
-                        path = modified_clone["params"][param.lower()]["value"]
+                        modified_clone["params"][param.lower()]["value"] = survey[i][
+                            param
+                        ]
+                    elif param in modified_clone["params"]["inflows"]["values"]:
+                        modified_clone["params"]["inflows"]["values"][param] += survey[
+                            i
+                        ][param]
                     else:
-                        if param in modified_clone["inflows"]["values"]:
-                            path = modified_clone["inflows"]["values"][param]
-                    if path:
-                        path = survey[i][param]
+                        raise ValueError(
+                            "Only composition and temperature/pressure surveys are currently supported."
+                        )
 
             else:
                 raise IOError(

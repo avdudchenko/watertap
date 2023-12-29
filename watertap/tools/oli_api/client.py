@@ -57,6 +57,13 @@ import time
 from watertap.tools.oli_api.util.watertap_to_oli_helper_functions import get_oli_name
 
 _logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    "OLIAPI -%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S"
+)
+handler.setFormatter(formatter)
+_logger.addHandler(handler)
+_logger.setLevel(logging.DEBUG)
 
 
 class OLIApi:
@@ -309,10 +316,10 @@ class OLIApi:
         :return boolean: status of user permission (to delete DBS files from OLI Cloud)
         """
 
-        print("WaterTAP will delete dbs files:")
+        _logger.info("WaterTAP will delete dbs files:")
         for file in dbs_file_ids:
-            print(f"- {file}")
-        print("from OLI Cloud.")
+            _logger.info(f"- {file}")
+        _logger.info("from OLI Cloud.")
         if self.test is True:
             r = "y"
         else:
@@ -347,7 +354,7 @@ class OLIApi:
         session=None,
     ):
         """ """
-        print("running {} sample #{}".format(mode, sample_index))
+        # print("running {} sample #{}".format(mode, sample_index))
         if not bool(flash_method):
             raise IOError(
                 " Specify a flash method to use from {self.valid_flashes.keys()}."
@@ -373,11 +380,13 @@ class OLIApi:
             async with session.post(endpoint, headers=headers, data=data) as response:
                 if response.status == 200:
                     result = {sample_index: await response.json()}
-                    print(
-                        "Received response for {} sample #{}".format(mode, sample_index)
-                    )
                     return result
                 else:
+                    print(
+                        "Failed to receive response for {} sample #{}".format(
+                            mode, sample_index
+                        )
+                    )
                     return {sample_index: False}
 
         if mode == "GET":
@@ -389,14 +398,20 @@ class OLIApi:
 
                 if response.status == 200:
                     result = {sample_index: await response.json()}
-                    print(
-                        "Received response for {} sample #{}".format(mode, sample_index)
-                    )
+                    # print(
+                    #     "Received response for {} sample #{}".format(mode, sample_index)
+                    # )
                     return result
                 else:
+                    _logger.info(
+                        "Failed to receive response for {} sample #{}".format(
+                            mode, sample_index
+                        )
+                    )
                     return {sample_index: False}
 
     def get_result_link(self, result):
+        _logger.debug(result)
         if bool(result):
             if result["status"] == "SUCCESS":
                 if "data" in result:
@@ -408,19 +423,34 @@ class OLIApi:
                             if "resultsLink" in result["data"]:
                                 results_link = result["data"]["resultsLink"]
                                 return results_link
+
         return False
 
     def check_progress(self, result):
         if "status" in result:
             status = result["status"]
-            _logger.debug(status)
+
             if status == "PROCESSED" or status == "FAILED":
                 if "data" in result:
                     return result["data"]
                 else:
+                    _logger.debug(
+                        "Status: {}, result link: {}".format(
+                            result["status"], result["resultsLink"]
+                        )
+                    )
                     return False
             elif status == "IN QUEUE" or status == "IN PROGRESS":
+                _logger.debug(
+                    "Status: {}, result link: {}".format(
+                        result["status"], result["resultsLink"]
+                    )
+                )
                 return True
+            else:
+                _logger.debug("No status reported, result is : {}".format(result))
+        else:
+            _logger.debug("No status reported, result is : {}".format(result))
 
     def call(
         self,

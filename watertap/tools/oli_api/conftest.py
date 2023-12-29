@@ -81,7 +81,6 @@ def auth_credentials() -> dict:
 def oliapi_instance(
     tmp_path: Path, auth_credentials: dict, local_dbs_file: Path
 ) -> OLIApi:
-
     if not cryptography_available:
         pytest.skip(reason="cryptography module not available.")
     cred_file_path = tmp_path / "pytest-credentials.txt"

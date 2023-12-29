@@ -59,10 +59,13 @@ if cryptography_available:
 _logger = logging.getLogger(__name__)
 # set to info level, so user can see what is going on
 handler = logging.StreamHandler()
-formatter = logging.Formatter("OLIAPI - %(levelname)s - %(message)s")
+formatter = logging.Formatter(
+    "OLIAPI -%(asctime)s - %(levelname)s - %(message)s", "%H:%M:%S"
+)
 handler.setFormatter(formatter)
 _logger.addHandler(handler)
-_logger.setLevel(logging.INFO)
+_logger.setLevel(logging.DEBUG)
+
 # _logger.info("Logger set to info level")
 
 

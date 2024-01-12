@@ -359,6 +359,7 @@ class Flash:
                         len(clones), time.time() - submit_time
                     )
                 )
+
                 get_time = time.time()
                 while True:
                     time.sleep(1)

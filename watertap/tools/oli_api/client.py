@@ -354,7 +354,7 @@ class OLIApi:
         session=None,
     ):
         """ """
-        # print("running {} sample #{}".format(mode, sample_index))
+        _logger.info("running {} sample #{}".format(mode, sample_index))
         if not bool(flash_method):
             raise IOError(
                 " Specify a flash method to use from {self.valid_flashes.keys()}."
@@ -392,15 +392,12 @@ class OLIApi:
         if mode == "GET":
             data = ""
             endpoint = input_params
-            # print("EDNPOINT", endpoint)
             async with session.get(endpoint, headers=headers, data=data) as response:
-                # result = response.text
-
                 if response.status == 200:
                     result = {sample_index: await response.json()}
-                    # print(
-                    #     "Received response for {} sample #{}".format(mode, sample_index)
-                    # )
+                    print(
+                        "Received response for {} sample #{}".format(mode, sample_index)
+                    )
                     return result
                 else:
                     _logger.info(

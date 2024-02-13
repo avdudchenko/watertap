@@ -114,7 +114,9 @@ class Flash:
         else:
             _logger.setLevel(logging.DEBUG)
 
-    def build_survey(self, survey_arrays, get_oli_names=False, file_name=None):
+    def build_survey(
+        self, survey_arrays, get_oli_names=False, file_name=None, mesh_grid=True
+    ):
         """
         Builds a dictionary used to modify flash calculation parameters.
 
@@ -132,10 +134,23 @@ class Flash:
         _name = lambda k: get_oli_name(k) if get_oli_names else k
 
         i = 0
-        survey = {}
-        for v in values:
-            survey[i] = {_name(keys[j]): v[j] for j in range(len(v)) for j in num_keys}
-            i = i + 1
+        if mesh_grid:
+            survey = {}
+            for v in values:
+                survey[i] = {
+                    _name(keys[j]): v[j] for j in range(len(v)) for j in num_keys
+                }
+                i = i + 1
+        else:
+            arr_length = [len(arr) for _, arr in survey_arrays.items()]
+            if min(arr_length) != max(arr_length):
+                raise TypeError("All arrays must have same length whe mesh_grid=False")
+            survey = {}
+            for idx in range(arr_length[0]):
+                survey[idx] = {
+                    _name(key): arr[idx] for key, arr in survey_arrays.items()
+                }
+
         _logger.info(f"Survey contains {len(survey)} items.")
         if file_name:
             self.write_output(survey, file_name)
@@ -375,9 +390,9 @@ class Flash:
                                 param
                             ] += survey[i][param]
                         else:
-                            modified_clone["params"]["inflows"]["values"][
-                                param
-                            ] = survey[i][param]
+                            modified_clone["params"]["inflows"]["values"][param] = (
+                                survey[i][param]
+                            )
                     else:
                         raise ValueError(
                             "Only composition and temperature/pressure surveys are currently supported."

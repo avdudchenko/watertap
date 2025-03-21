@@ -59,7 +59,7 @@ __author__ = "Alexander Dudchenko, Adam Atia"
 
 
 def main():
-    solver = get_solver()
+    solver = get_solver("cyipopt-watertap")
     m = build()
     initialize(m, solver)
     add_objective(m)

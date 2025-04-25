@@ -1,0 +1,48 @@
+solvent_list:
+  H2O:
+    molecular_weight (kg/mol): 18.0e-3
+solute_list:
+  Na_+:
+    concentration (mg/L): 10556
+    diffusivity: 1.33e-9
+    molecular_weight (kg/mol): 22.989769e-3
+    stokes_radius (m): 0.184e-9
+    elemental charge: 1
+  K_+:
+    concentration (mg/L): 380
+    diffusivity: 1.957e-9
+    molecular_weight (kg/mol): 39.0983e-3
+    stokes_radius (m): 0.125e-9
+    elemental charge: 1
+  Ca_2+:
+    concentration (mg/L): 400
+    diffusivity: 7.53e-10
+    molecular_weight (kg/mol): 40.078e-3
+    stokes_radius (m): 0.309e-9
+    elemental charge: 2
+  Mg_2+:
+    concentration (mg/L): 1262
+    diffusivity: 0.705e-9
+    molecular_weight (kg/mol): 24.305e-3
+    stokes_radius (m): 0.347e-9
+    elemental charge: 2
+  Cl_-:
+    concentration (mg/L): 18980.0
+    diffusivity: 2.03e-9
+    molecular_weight (kg/mol): 35.453e-3
+    stokes_radius (m): 0.121e-9
+    elemental charge: -1
+  SO4_2-:
+    concentration (mg/L): 2649
+    diffusivity: 1.07e-9
+    molecular_weight (kg/mol): 96.06e-3
+    stokes_radius (m): 0.230e-9
+    elemental charge: -2
+  HCO3_-:
+    concentration (mg/L): 140.0
+    diffusivity: 1.18e-9
+    molecular_weight (kg/mol): 61.0168e-3
+    stokes_radius (m): 2.06e-10
+    elemental charge: -1
+pH: 7.56
+flow_mass: 1 

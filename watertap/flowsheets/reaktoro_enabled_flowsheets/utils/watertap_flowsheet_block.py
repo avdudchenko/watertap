@@ -149,7 +149,25 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
         else:
             return None
 
-    def build_report_table(self, unit_name, data_dict, ostream=None, prefix=None):
+    def build_report_table(
+        self, unit_name, data_dict, ostream=None, prefix=None, use_default_units=False
+    ):
+        def get_values(k, v):
+            if use_default_units:
+                [
+                    "{:#.5g}".format(report_quantity(v).m),
+                    report_quantity(v).u,
+                    v.fixed,
+                    v.bounds,
+                ]
+            else:
+                return [
+                    "{:#.5g}".format(v.value),
+                    v.get_units(),
+                    v.fixed,
+                    v.bounds,
+                ]
+
         if ostream is None:
             ostream = sys.stdout
         max_str_length = 84
@@ -165,22 +183,21 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
                 prefix + tab,
                 ((k, v) for k, v in sub_data.items()),
                 ("Value", "Units", "Fixed", "Bounds"),
-                lambda k, v: [
-                    "{:#.5g}".format(report_quantity(v).m),
-                    report_quantity(v).u,
-                    v.fixed,
-                    v.bounds,
-                ],
+                get_values,
                 sort_rows=False,
             )
             ostream.write(f"\n")
 
         ostream.write("-" * max_str_length + "\n")
 
-    def report(self, time_point=0, dof=False, ostream=None, prefix=""):
+    def report(
+        self, time_point=0, dof=False, ostream=None, prefix="", use_default_units=False
+    ):
         unit_name, defined_variables = self.get_model_state_dict()
 
         if unit_name is not None:
-            self.build_report_table(unit_name, defined_variables, ostream, prefix)
+            self.build_report_table(
+                unit_name, defined_variables, ostream, prefix, use_default_units
+            )
         if unit_name is None:
             super().report(time_point, dof, ostream, prefix)

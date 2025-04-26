@@ -48,6 +48,7 @@ def build_case(water, charge_balance_with_reaktoro=False):
 @pytest.mark.component
 def test_mc_feed():
     m = build_case("USDA_brackish", False)
+    m.fs.feed.report(use_default_units=True)
     assert degrees_of_freedom(m) == 0
     iscale.calculate_scaling_factors(m)
     m.fs.feed.initialize()

@@ -25,38 +25,38 @@ from watertap.costing import WaterTAPCosting
 __author__ = "Alexander Dudchenko"
 
 
-# @pytest.mark.component
-# def test_acid_default():
-#     m = build_case("USDA_brackish", True)
-#     m.fs.precipitation = PrecipitationUnit(
-#         default_property_package=m.fs.properties,
-#     )
-#     m.fs.precipitation.fix_and_scale()
+@pytest.mark.component
+def test_precip_default():
+    m = build_case("USDA_brackish", True)
+    m.fs.precipitation = PrecipitationUnit(
+        default_property_package=m.fs.properties,
+    )
+    m.fs.precipitation.fix_and_scale()
 
-#     m.fs.feed.outlet.connect_to(m.fs.precipitation.inlet)
-#     TransformationFactory("network.expand_arcs").apply_to(m)
-#     iscale.calculate_scaling_factors(m)
+    m.fs.feed.outlet.connect_to(m.fs.precipitation.inlet)
+    TransformationFactory("network.expand_arcs").apply_to(m)
+    iscale.calculate_scaling_factors(m)
 
-#     m.fs.feed.initialize()
-#     m.fs.precipitation.initialize()
-#     m.fs.precipitation.report()
+    m.fs.feed.initialize()
+    m.fs.precipitation.initialize()
+    m.fs.precipitation.report()
 
-#     assert degrees_of_freedom(m) == 0
+    assert degrees_of_freedom(m) == 0
 
-#     solver = get_cyipopt_solver()
-#     result = solver.solve(m, tee=True)
-#     assert_optimal_termination(result)
-#     m.fs.precipitation.report()
-#     assert degrees_of_freedom(m) == 0
-#     assert (
-#         pytest.approx(
-#             m.fs.precipitation.precipitation_reactor.flow_mass_precipitate[
-#                 "Calcite"
-#             ].value,
-#             1e-5,
-#         )
-#         == 4.2935e-05
-#     )
+    solver = get_cyipopt_solver()
+    result = solver.solve(m, tee=True)
+    assert_optimal_termination(result)
+    m.fs.precipitation.report()
+    assert degrees_of_freedom(m) == 0
+    assert (
+        pytest.approx(
+            m.fs.precipitation.precipitation_reactor.flow_mass_precipitate[
+                "Calcite"
+            ].value,
+            1e-5,
+        )
+        == 4.2935e-05
+    )
 
 
 @pytest.mark.component

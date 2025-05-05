@@ -38,7 +38,7 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
         super().build()
 
     def fix_and_scale(self):
-        self.fix_operation()
+        self.set_fixed_operation()
         self.scale_before_initialization()
 
     def initialize_unit(self, **kwargs):
@@ -55,8 +55,12 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
         for outlet in self.outlet_connections:
             outlet.propagate()
 
-    def fix_operation(self, **kwargs):
+    def set_fixed_operation(self, **kwargs):
         """Developer should implement a routine to fix unit operation for initialization and 0DOF solving"""
+        pass
+
+    def set_optimization_operation(self, **kwargs):
+        """Developer should implement a routine to unfix variables for unit to perform optimization"""
         pass
 
     def setup_optimization(self, **kwargs):
@@ -154,7 +158,7 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
     ):
         def get_values(k, v):
             if use_default_units:
-                [
+                return [
                     "{:#.5g}".format(report_quantity(v).m),
                     report_quantity(v).u,
                     v.fixed,

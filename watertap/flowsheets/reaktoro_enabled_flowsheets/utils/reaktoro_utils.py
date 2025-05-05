@@ -187,3 +187,37 @@ class ViablePrecipitantsBase(dict):
             "precipitation_stoichiometric": precipitation_stoichiometric,
             "primary_ion": primary_ion,
         }
+
+
+class ReaktoroOptionsContainer(dict):
+    """Container for storing reaktoro options and providing simple methods for updating
+    options dictionary with user provided options"""
+
+    def __init__(self):
+        self["system_state"] = {}
+        self["aqueous_phase"] = {
+            "activity_model": "ActivityModelPitzer",
+            "fixed_solvent_specie": "H2O",
+            "convert_to_rkt_species": True,
+        }
+        self["database"] = "PhreeqcDatabase"
+        self["database_file"] = "pitzer.dat"
+        self["reaktoro_block_manager"] = None
+        self["build_speciation_block"] = True
+        self["assert_charge_neutrality"] = True
+        self["dissolve_species_in_reaktoro"] = True
+
+    def system_state_option(self, option, value):
+        self["system_state"][option] = value
+
+    def system_state_modifier_option(self, option, value):
+        self["system_state"][option] = value
+
+    def aqueous_phase_option(self, option, value):
+        self["aqueous_phase"][option] = value
+
+    def update_with_user_options(self, options):
+        if options is None:
+            pass
+        else:
+            self.update(options)

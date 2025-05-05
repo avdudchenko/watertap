@@ -2,8 +2,9 @@ __author__ = "Alexander Dudchenko"
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.chemical_utils import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ViableReagentsBase,
+    ReaktoroOptionsContainer,
 )
 from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
@@ -49,7 +50,7 @@ class ViableReagents(ViableReagentsBase):
             purity=0.38,
             solvent=("H2O", 18.01 * pyunits.g / pyunits.mol),
             cost=0.17,
-            density=1.18 * pyunits.kg / pyunits.liter,
+            density_reagent=1.18 * pyunits.kg / pyunits.liter,
         )
         self.register_reagent(
             "H2SO4",
@@ -60,7 +61,7 @@ class ViableReagents(ViableReagentsBase):
             purity=0.93,
             solvent=("H2O", 18.01 * pyunits.g / pyunits.mol),
             cost=0.12,
-            density=1.8136 * pyunits.kg / pyunits.liter,
+            density_reagent=1.8136 * pyunits.kg / pyunits.liter,
         )
 
 
@@ -95,25 +96,19 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         "add_reaktoro_chemistry",
         ConfigValue(
             default=True,
-            description="To use Reaktoro-PSE for estimating amount of solids formed",
+            description="To use Reaktoro-PSE for estimate pH change",
             doc="""
-            If True, builds a reaktoro block and useses it to calculate how much solids form based on feed
-            composition adn amount of added reagent. 
+            If True, builds a reaktoro block and uses it to calculate change in pH due to the addition of given chemical. 
             """,
         ),
     )
     CONFIG.declare(
         "reaktoro_options",
         ConfigValue(
-            default={
-                "activity_model": "ActivityModelPitzer",
-                "database": "PhreeqcDatabase",
-                "database_file": "pitzer.dat",
-                "reaktoro_block_manager": None,
-            },
-            description="Options for configuring Reaktoro-PSE",
+            default=None,
+            description="User options for configuring Reaktoro-PSE",
             doc="""
-            Options for configuring Reaktoro-PSE
+            User can provide additional reaktoro options, or override defaults provided by ReaktoroOptionsContainer class
             """,
         ),
     )
@@ -193,38 +188,33 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
 
         outputs = {("pH", None): self.chemical_reactor.pH["outlet"]}
 
-        self.chemistry_block = ReaktoroBlock(
-            system_state={
-                "temperature": self.chemical_reactor.dissolution_reactor.properties_in[
-                    0
-                ].temperature,
-                "pressure": self.chemical_reactor.dissolution_reactor.properties_in[
-                    0
-                ].pressure,
-                "pH": self.chemical_reactor.pH["inlet"],
-            },
-            aqueous_phase={
-                "composition": self.chemical_reactor.dissolution_reactor.properties_in[
-                    0
-                ].flow_mol_phase_comp,
-                "activity_model": self.config.reaktoro_options["activity_model"],
-                "fixed_solvent_specie": "H2O",
-                "convert_to_rkt_species": True,
-            },
-            chemistry_modifier=reagents,
-            outputs=outputs,
-            database=self.config.reaktoro_options["database"],
-            database_file=self.config.reaktoro_options["database_file"],
-            dissolve_species_in_reaktoro=True,
-            build_speciation_block=True,
-            assert_charge_neutrality=True,
-            reaktoro_block_manager=self.config.reaktoro_options[
-                "reaktoro_block_manager"
-            ],
-            register_new_chemistry_modifiers=self.config.viable_reagents.get_reaktoro_chemistry_modifiers(),
+        self.reaktoro_options = ReaktoroOptionsContainer()
+        self.reaktoro_options.system_state_option(
+            "temperature",
+            self.chemical_reactor.dissolution_reactor.properties_in[0].temperature,
         )
+        self.reaktoro_options.system_state_option(
+            "pressure",
+            self.chemical_reactor.dissolution_reactor.properties_in[0].pressure,
+        )
+        self.reaktoro_options.system_state_option(
+            "pH", self.chemical_reactor.pH["inlet"]
+        )
+        self.reaktoro_options.aqueous_phase_option(
+            "composition",
+            self.chemical_reactor.dissolution_reactor.properties_in[
+                0
+            ].flow_mol_phase_comp,
+        )
+        self.reaktoro_options["register_new_chemistry_modifiers"] = (
+            self.config.viable_reagents.get_reaktoro_chemistry_modifiers()
+        )
+        self.reaktoro_options["chemistry_modifier"] = reagents
+        self.reaktoro_options["outputs"] = outputs
 
-    def fix_operation(self):
+        self.chemistry_block = ReaktoroBlock(**self.reaktoro_options)
+
+    def set_fixed_operation(self):
         for reagent, options in self.selected_reagents.items():
             self.chemical_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000
@@ -297,7 +287,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             for reagent in self.chemical_reactor.flow_mass_reagent:
                 model_state[f"Costs"][f"Reagent {reagent} cost"] = (
                     self.config.default_costing_package.aggregate_flow_costs[
-                        f"{self.name}_precipitation_reagent_{reagent}".replace(".", "_")
+                        f"{self.name}_reagent_{reagent}".replace(".", "_"),
                     ]
                 )
         return self.name, model_state

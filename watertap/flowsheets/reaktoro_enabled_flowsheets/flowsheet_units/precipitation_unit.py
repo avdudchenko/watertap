@@ -1,9 +1,10 @@
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.chemical_utils import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ViablePrecipitantsBase,
     ViableReagentsBase,
+    ReaktoroOptionsContainer,
 )
 from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
@@ -146,15 +147,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "reaktoro_options",
         ConfigValue(
-            default={
-                "activity_model": "ActivityModelPitzer",
-                "database": "PhreeqcDatabase",
-                "database_file": "pitzer.dat",
-                "reaktoro_block_manager": None,
-            },
-            description="Options for configuring Reaktoro-PSE",
+            default=None,
+            description="User options for configuring Reaktoro-PSE provided as a dict",
             doc="""
-            Options for configuring Reaktoro-PSE
+            User can provide additional reaktoro options, or override defaults provided by ReaktoroOptionsContainer class
             """,
         ),
     )
@@ -267,39 +263,37 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         for phase, obj in self.precipitation_reactor.flow_mol_precipitate.items():
             outputs[("speciesAmount", phase)] = obj
 
-        self.precipitation_block = ReaktoroBlock(
-            system_state={
-                "temperature": self.precipitation_reactor.dissolution_reactor.properties_in[
-                    0
-                ].temperature,
-                "pressure": self.precipitation_reactor.dissolution_reactor.properties_in[
-                    0
-                ].pressure,
-                "pH": self.precipitation_reactor.pH["inlet"],
-            },
-            aqueous_phase={
-                "composition": self.precipitation_reactor.dissolution_reactor.properties_in[
-                    0
-                ].flow_mol_phase_comp,
-                "activity_model": self.config.reaktoro_options["activity_model"],
-                "fixed_solvent_specie": "H2O",
-                "convert_to_rkt_species": True,
-            },
-            mineral_phase={"phase_components": list(self.selected_precipitants.keys())},
-            register_new_chemistry_modifiers=self.config.viable_reagents.get_reaktoro_chemistry_modifiers(),
-            chemistry_modifier=reagents,
-            outputs=outputs,
-            database=self.config.reaktoro_options["database"],
-            database_file=self.config.reaktoro_options["database_file"],
-            dissolve_species_in_reaktoro=True,
-            build_speciation_block=True,
-            assert_charge_neutrality=True,
-            reaktoro_block_manager=self.config.reaktoro_options[
-                "reaktoro_block_manager"
-            ],
+        self.reaktoro_options = ReaktoroOptionsContainer()
+        self.reaktoro_options.system_state_option(
+            "temperature",
+            self.precipitation_reactor.dissolution_reactor.properties_in[0].temperature,
         )
+        self.reaktoro_options.system_state_option(
+            "pressure",
+            self.precipitation_reactor.dissolution_reactor.properties_in[0].pressure,
+        )
+        self.reaktoro_options.system_state_option(
+            "pH", self.precipitation_reactor.pH["inlet"]
+        )
+        self.reaktoro_options.aqueous_phase_option(
+            "composition",
+            self.precipitation_reactor.dissolution_reactor.properties_in[
+                0
+            ].flow_mol_phase_comp,
+        )
+        self.reaktoro_options["mineral_phase"] = {
+            "phase_components": list(self.selected_precipitants.keys())
+        }
+        self.reaktoro_options["register_new_chemistry_modifiers"] = (
+            self.config.viable_reagents.get_reaktoro_chemistry_modifiers()
+        )
+        self.reaktoro_options["chemistry_modifier"] = reagents
+        self.reaktoro_options["outputs"] = outputs
+        self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
 
-    def fix_operation(self):
+        self.precipitation_block = ReaktoroBlock(**self.reaktoro_options)
+
+    def set_fixed_operation(self):
         for reagent, options in self.selected_reagents.items():
             self.precipitation_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000

@@ -84,7 +84,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         self.register_port("inlet", self.pump.inlet, self.pump.pH)
         self.register_port("outlet", self.pump.outlet, self.pump.pH)
 
-    def fix_operation(self):
+    def set_fixed_operation(self):
         if self.config.initialization_pressure == "osmotic_pressure":
             init_flags = self.pump.control_volume.initialize()
             self.pump.control_volume.release_state(init_flags)
@@ -105,5 +105,5 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.pump.control_volume.work, 1e-4)
 
     def initialize_unit(self):
-        self.fix_operation()
+        self.set_fixed_operation()
         self.pump.initialize()

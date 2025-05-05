@@ -144,7 +144,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         self.feed.pH = Var(initialize=self.config.pH, units=pyunits.dimensionless)
         self.register_port("outlet", self.feed.outlet, {"pH": self.feed.pH})
 
-    def fix_operation(self, solver=None):
+    def set_fixed_operation(self, solver=None):
         """sets fixed unit operation"""
 
         for ion, value in self.config.ion_concentrations.items():

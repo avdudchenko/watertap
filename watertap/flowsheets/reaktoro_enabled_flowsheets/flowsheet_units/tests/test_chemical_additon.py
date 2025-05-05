@@ -20,6 +20,8 @@ from pyomo.environ import (
     units as pyunits,
 )
 
+from watertap.costing import WaterTAPCosting
+
 __author__ = "Alexander Dudchenko"
 
 
@@ -52,6 +54,48 @@ def test_acid_default():
             1e-5,
         )
         == 7.0159
+    )
+
+
+@pytest.mark.component
+def test_costing():
+    m = build_case("USDA_brackish", True)
+    m.fs.costing = WaterTAPCosting()
+    m.fs.acidification = ChemicalAdditionUnit(
+        default_property_package=m.fs.properties,
+        default_costing_package=m.fs.costing,
+    )
+    m.fs.acidification.fix_and_scale()
+
+    m.fs.feed.outlet.connect_to(m.fs.acidification.inlet)
+    m.fs.costing.cost_process()
+    TransformationFactory("network.expand_arcs").apply_to(m)
+    iscale.calculate_scaling_factors(m)
+    m.fs.costing.initialize()
+    m.fs.feed.initialize()
+    m.fs.acidification.initialize()
+    m.fs.acidification.report()
+
+    assert degrees_of_freedom(m) == 0
+
+    solver = get_cyipopt_solver()
+    result = solver.solve(m, tee=True)
+    assert_optimal_termination(result)
+    m.fs.acidification.report()
+    assert degrees_of_freedom(m) == 0
+    assert (
+        pytest.approx(
+            m.fs.acidification.chemical_reactor.costing.capital_cost.value,
+            1e-1,
+        )
+        == 42.114875938347524
+    )
+    assert (
+        pytest.approx(
+            m.fs.costing.aggregate_flow_costs["fs_acidification_reagent_HCl"].value,
+            1e-1,
+        )
+        == 53.648
     )
 
 

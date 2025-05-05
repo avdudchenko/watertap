@@ -13,7 +13,6 @@ from pyomo.environ import (
     Constraint,
     units as pyunits,
 )
-from pyomo.util.calc_var_value import calculate_variable_from_constraint
 from watertap.core.solvers import get_solver
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,

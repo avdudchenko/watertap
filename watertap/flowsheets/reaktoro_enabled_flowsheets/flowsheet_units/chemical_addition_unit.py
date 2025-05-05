@@ -215,6 +215,9 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         self.chemistry_block = ReaktoroBlock(**self.reaktoro_options)
 
     def set_fixed_operation(self):
+        """fixes operation point for chemical addition unit model"""
+        for reagent, _ in self.selected_reagents.items():
+            self.chemical_reactor.reagent_dose[reagent].fix(10 / 1000)
         for reagent, options in self.selected_reagents.items():
             self.chemical_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000
@@ -223,7 +226,9 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 options["max_dose"] / 1000
             )
             self.chemical_reactor.flow_mol_reagent[reagent].setlb(None)
-        # self.chemical_reactor.pH.fix()
+        self.inlet.fix()
+        assert degrees_of_freedom(self) == 0
+        self.inlet.unfix()
 
     def scale_before_initialization(self, **kwargs):
         max_dose = []
@@ -245,10 +250,6 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.chemical_reactor.pH, 1)
 
     def initialize_unit(self, **kwargs):
-
-        for reagent, _ in self.selected_reagents.items():
-            self.chemical_reactor.reagent_dose[reagent].fix(10 / 1000)
-
         self.chemical_reactor.initialize()
         if self.config.add_reaktoro_chemistry:
             # get intial mole flows
@@ -269,7 +270,11 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             data_dict["Pressure"] = stream.pressure
             return data_dict
 
+        self.inlet.fix()
+        unit_dofs = degrees_of_freedom(self)
+        self.inlet.unfix()
         model_state = {
+            "Model": {"DOFs": unit_dofs},
             "Inlet state": get_ion_comp(
                 self.chemical_reactor.dissolution_reactor.properties_in[0],
                 self.chemical_reactor.pH["inlet"],

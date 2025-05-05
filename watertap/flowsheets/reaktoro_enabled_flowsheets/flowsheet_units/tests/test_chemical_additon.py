@@ -58,6 +58,39 @@ def test_acid_default():
 
 
 @pytest.mark.component
+def test_acid_without_reaktoro_default():
+    m = build_case("USDA_brackish", True)
+    m.fs.acidification = ChemicalAdditionUnit(
+        default_property_package=m.fs.properties,
+        add_reaktoro_chemistry=False,
+    )
+    m.fs.acidification.fix_and_scale()
+
+    m.fs.feed.outlet.connect_to(m.fs.acidification.inlet)
+    TransformationFactory("network.expand_arcs").apply_to(m)
+    iscale.calculate_scaling_factors(m)
+
+    m.fs.feed.initialize()
+    m.fs.acidification.initialize()
+    m.fs.acidification.report()
+    m.fs.acidification.report(use_default_units=True)
+    assert degrees_of_freedom(m) == 0
+
+    solver = get_cyipopt_solver()
+    result = solver.solve(m, tee=True)
+    assert_optimal_termination(result)
+    m.fs.acidification.report()
+    assert degrees_of_freedom(m) == 0
+    assert (
+        pytest.approx(
+            m.fs.acidification.chemical_reactor.pH["outlet"].value,
+            1e-5,
+        )
+        == 7.07
+    )
+
+
+@pytest.mark.component
 def test_costing():
     m = build_case("USDA_brackish", True)
     m.fs.costing = WaterTAPCosting()

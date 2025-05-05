@@ -36,7 +36,6 @@ from idaes.core import UnitModelCostingBlock
 import idaes.core.util.scaling as iscale
 
 from idaes.models.unit_models import (
-    StateJunction,
     Translator,
 )
 from reaktoro_pse.reaktoro_block import ReaktoroBlock

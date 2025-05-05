@@ -156,20 +156,58 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
     def build_report_table(
         self, unit_name, data_dict, ostream=None, prefix=None, use_default_units=False
     ):
+        """Builds a report table for the unit model
+        Args:
+            unit_name: Name of the unit
+            data_dict: Dictionary containing data to report
+            ostream: Output stream for the report (default: sys.stdout)
+            prefix: String prefix for formatting the report
+            use_default_units: Boolean to indicate if default units should be used
+        """
+
+        def _get_fixed_state(v):
+            """Get the fixed state of a variable, if none exists then return N/A"""
+            try:
+                return v.fixed
+            except AttributeError:
+                return "N/A"
+
+        def _get_bounds(v):
+            """Get the bounds of a variable, if none exists then return N/A"""
+            try:
+                return v.bounds
+            except AttributeError:
+                return "N/A"
+
         def get_values(k, v):
-            if use_default_units:
+            """Get the values of a variable,  dimensions, fixed state and bounds"""
+            if isinstance(v, int):
+                return [
+                    v,
+                    "dimensionless",
+                    "N/A",
+                    "N/A",
+                ]
+            elif isinstance(v, float):
+                return [
+                    "{:#.5g}".format(v),
+                    "dimensionless",
+                    "N/A",
+                    "N/A",
+                ]
+            elif use_default_units:
                 return [
                     "{:#.5g}".format(report_quantity(v).m),
                     report_quantity(v).u,
-                    v.fixed,
-                    v.bounds,
+                    _get_fixed_state(v),
+                    _get_bounds(v),
                 ]
             else:
                 return [
-                    "{:#.5g}".format(v.value),
+                    "{:#.5g}".format(value(v)),
                     v.get_units(),
-                    v.fixed,
-                    v.bounds,
+                    _get_fixed_state(v),
+                    _get_bounds(v),
                 ]
 
         if ostream is None:

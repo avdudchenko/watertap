@@ -3,8 +3,6 @@ __author__ = "Alexander Dudchenko"
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
 )
-
-from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
 from pyomo.environ import (
     assert_optimal_termination,
@@ -12,7 +10,6 @@ from pyomo.environ import (
 
 from pyomo.environ import (
     Var,
-    Constraint,
     units as pyunits,
 )
 from pyomo.common.config import ConfigValue
@@ -41,7 +38,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         ),
     )
     CONFIG.declare(
-        "osmotic_overpressure",
+        "osmotic_over_pressure",
         ConfigValue(
             default=2,
             description="Value to multiply osmotic pressure by",
@@ -73,18 +70,24 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
     )
 
     def build(self):
+        """Build a multi-component pump unit model"""
         super().build()
         self.pump = Pump(property_package=self.config.default_property_package)
         if self.config.default_costing_package is not None:
             self.pump.costing = UnitModelCostingBlock(
                 flowsheet_costing_block=self.config.default_costing_package
             )
-        self.pump.pH = Var(initialize=self.config.pH, units=pyunits.dimensionless)
+        # Add pump flow rate
+        self.pump.control_volume.properties_in[0].flow_vol_phase[...]
+        self.pump.pH = Var(initialize=7, units=pyunits.dimensionless)
 
-        self.register_port("inlet", self.pump.inlet, self.pump.pH)
-        self.register_port("outlet", self.pump.outlet, self.pump.pH)
+        self.register_port("inlet", self.pump.inlet, {"pH": self.pump.pH})
+        self.register_port("outlet", self.pump.outlet, {"pH": self.pump.pH})
 
     def set_fixed_operation(self):
+        """fixes operation point for pump unit model
+        Uses osmotic pressure to initialize pump outlet pressure or user defined pressure
+        """
         if self.config.initialization_pressure == "osmotic_pressure":
             init_flags = self.pump.control_volume.initialize()
             self.pump.control_volume.release_state(init_flags)
@@ -99,6 +102,9 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
             self.pump.outlet.pressure[0].fix(self.config.initialization_pressure)
 
         self.pump.efficiency_pump[0].fix(self.config.pump_efficiency)
+        self.inlet.fix()
+        assert degrees_of_freedom(self) == 0
+        self.inlet.unfix()
 
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.pump.outlet.pressure, 1e-5)
@@ -107,3 +113,27 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
     def initialize_unit(self):
         self.set_fixed_operation()
         self.pump.initialize()
+
+    def get_model_state_dict(self):
+        """Returns a dictionary with the model state"""
+        self.inlet.fix()
+        unit_dofs = degrees_of_freedom(self)
+        self.inlet.unfix()
+
+        model_state_dict = {
+            "Model": {"DOFs": unit_dofs},
+            "Overall": {
+                "pH": self.pump.pH,
+                "Temperature": self.pump.inlet.temperature[0],
+                "Flow rate": self.pump.control_volume.properties_in[0].flow_vol_phase[
+                    "Liq"
+                ],
+            },
+            "Inlet": {
+                "Pressure": self.pump.inlet.pressure[0],
+            },
+            "Outlet": {
+                "Pressure": self.pump.outlet.pressure[0],
+            },
+        }
+        return self.name, model_state_dict

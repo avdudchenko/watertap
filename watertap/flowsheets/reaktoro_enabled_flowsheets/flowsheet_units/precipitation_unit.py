@@ -211,7 +211,8 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         self.add_sludge_mass_estimation()
         if self.config.add_reaktoro_chemistry:
             self.add_reaktoro_chemistry()
-
+        else:
+            self.build_equality_ph_constraints()
         self.register_port(
             "inlet",
             self.precipitation_reactor.inlet,
@@ -226,6 +227,12 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             "sludge",
             self.precipitation_reactor.waste,
             {"pH": self.precipitation_reactor.pH["outlet"]},
+        )
+
+    def build_equality_ph_constraints(self):
+        self.eq_outlet_pH = Constraint(
+            expr=self.precipitation_reactor.pH["inlet"]
+            == self.precipitation_reactor.pH["outlet"]
         )
 
     def add_sludge_mass_estimation(self):
@@ -307,6 +314,14 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
 
         for precip in self.selected_precipitants.keys():
             self.precipitation_reactor.flow_mol_precipitate[precip].setlb(None)
+            if self.config.add_reaktoro_chemistry == False:
+                self.precipitation_reactor.flow_mol_precipitate[precip].fix(1e-5)
+        for reagent, _ in self.selected_reagents.items():
+            self.precipitation_reactor.reagent_dose[reagent].fix(10 / 1000)
+
+        self.inlet.fix()
+        assert degrees_of_freedom(self) == 0
+        self.inlet.unfix()
 
     def scale_before_initialization(self, **kwargs):
         max_dose = []
@@ -349,11 +364,13 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
                 self.precipitation_reactor, self.precipitation_reactor.flow_mol_reagent
             )
+        else:
+            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1)
 
     def initialize_unit(self, **kwargs):
 
         for phase, data in self.selected_precipitants.items():
-            # assume that only fraction of ions will actual preciptaitate
+            # assume that only fraction of ions will actually precipitate
             flow = (
                 self.precipitation_reactor.inlet.flow_mol_phase_comp[
                     0.0, "Liq", data["primary_ion"]
@@ -361,15 +378,12 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 * 0.0001
             )
             self.precipitation_reactor.flow_mol_precipitate[phase].fix(flow)
-        for reagent, _ in self.selected_reagents.items():
-            self.precipitation_reactor.reagent_dose[reagent].fix(10 / 1000)
-
         self.precipitation_reactor.initialize()
         if self.config.add_reaktoro_chemistry:
-            # get intial mole flows
+            # get initial mole flows
             self.precipitation_block.initialize()
             self.precipitation_block.display_jacobian_scaling()
-            # recalcualte state with updated mol flow values
+            # recalculate state with updated mol flow values
             self.precipitation_reactor.initialize()
             for phase, data in self.selected_precipitants.items():
                 self.precipitation_reactor.flow_mol_precipitate[phase].unfix()
@@ -386,7 +400,11 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             data_dict["Pressure"] = stream.pressure
             return data_dict
 
+        self.inlet.fix()
+        unit_dofs = degrees_of_freedom(self)
+        self.inlet.unfix()
         model_state = {
+            "Model": {"DOFs": unit_dofs},
             "Inlet state": get_ion_comp(
                 self.precipitation_reactor.dissolution_reactor.properties_in[0],
                 self.precipitation_reactor.pH["inlet"],

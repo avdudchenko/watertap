@@ -92,19 +92,21 @@ class ViableReagentsBase(dict):
             }
 
     def get_reaktoro_chemistry_modifiers(self):
-
+        """Return a dictionary of reaktoro chemistry modifiers"""
         if hasattr(self, "modifier"):
             return self.modifier
         else:
             return None
 
     def check_if_reagents_are_pure(self, reagent_var):
+        """Check if any of the reagents are not pure"""
         for reagent in reagent_var:
             if reagent in self.solvents:
                 return False
         return True
 
     def get_unqiue_solvents(self, reagent_var):
+        """Get a list of unique solvents from the reagents"""
         solvents = []
         for reagent in reagent_var:
             if reagent in self.solvents:
@@ -113,6 +115,12 @@ class ViableReagentsBase(dict):
         return solvents
 
     def create_solvent_constraint(self, block, reagent_var, time_unit=pyunits.s):
+        """Create a constraint for the solvent amount based on the reagent amount
+
+        This will create a new variable for the solvent amount (flow_mol_solvent) and a constraint (eq_flow_mol_solvent)
+        that relates the solvent amount to the reagent amount.
+        The solvent amount is calculated based on the solvent ratio and the reagent amount.
+        """
         self.solvent_info = {}
 
         if (
@@ -129,7 +137,7 @@ class ViableReagentsBase(dict):
             )
 
             @block.Constraint(active_solvents)
-            def eq_solvent_amount(blk, solvent):
+            def eq_flow_mol_solvent(blk, solvent):
                 total_solvent = []
                 self.solvent_info[solvent] = []
                 for reagent in reagent_var:
@@ -163,7 +171,7 @@ class ViableReagentsBase(dict):
                 block.find_component("flow_mol_solvent")[solvent], sff
             )
             iscale.constraint_scaling_transform(
-                block.find_component("eq_solvent_amount")[solvent], sff
+                block.find_component("eq_flow_mol_solvent")[solvent], sff
             )
 
 

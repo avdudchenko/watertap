@@ -139,7 +139,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             default=True,
             description="To use Reaktoro-PSE for estimating amount of solids formed",
             doc="""
-            If True, builds a reaktoro block and useses it to calculate how much solids form based on feed
+            If True, builds a reaktoro block and uses it to calculate how much solids form based on feed
             composition adn amount of added reagent. 
             """,
         ),
@@ -403,7 +403,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         self.inlet.fix()
         unit_dofs = degrees_of_freedom(self)
         self.inlet.unfix()
-        model_state = {
+        model_state_dict = {
             "Model": {"DOFs": unit_dofs},
             "Inlet state": get_ion_comp(
                 self.precipitation_reactor.dissolution_reactor.properties_in[0],
@@ -421,13 +421,13 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             ),
         }
         if self.config.default_costing_package is not None:
-            model_state["Costs"] = {
+            model_state_dict["Costs"] = {
                 "Capital cost": self.precipitation_reactor.costing.capital_cost
             }
             for reagent in self.precipitation_reactor.flow_mass_reagent:
-                model_state[f"Costs"][f"Reagent {reagent} cost"] = (
+                model_state_dict[f"Costs"][f"Reagent {reagent} cost"] = (
                     self.config.default_costing_package.aggregate_flow_costs[
                         f"{self.name}_reagent_{reagent}".replace(".", "_")
                     ]
                 )
-        return self.name, model_state
+        return self.name, model_state_dict

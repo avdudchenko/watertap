@@ -8,6 +8,7 @@ from pyomo.common.config import ConfigValue
 
 from pyomo.environ import (
     value,
+    units as pyunits,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.connection_utility import (
     PortContainer,
@@ -205,7 +206,7 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
             else:
                 return [
                     "{:#.5g}".format(value(v)),
-                    v.get_units(),
+                    pyunits.get_units(v),
                     _get_fixed_state(v),
                     _get_bounds(v),
                 ]

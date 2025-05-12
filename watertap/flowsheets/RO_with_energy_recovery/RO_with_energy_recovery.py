@@ -369,6 +369,7 @@ def solve(blk, solver=None, tee=False, check_termination=True):
     results = solver.solve(blk, tee=tee)
     if check_termination:
         assert_optimal_termination(results)
+
     return results
 
 

@@ -3,7 +3,7 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ViablePrecipitantsBase,
-    ViableReagentsBase,
+    ViableReagents,
     ReaktoroOptionsContainer,
 )
 from watertap.core.solvers import get_solver
@@ -37,28 +37,6 @@ from reaktoro_pse.reaktoro_block import ReaktoroBlock
 from collections import OrderedDict
 
 __author__ = "Alexander Dudchenko"
-
-
-class ViableReagents(ViableReagentsBase):
-    def __init__(self):
-        self.register_reagent(
-            "Na2CO3",
-            105.99 * pyunits.g / pyunits.mol,
-            {"Na_+": 2, "HCO3_-": 1},
-            min_dose=0.1,
-            max_dose=3000,
-            purity=1,
-            cost=0.19,
-        )
-        self.register_reagent(
-            "CaO",
-            56.0774 * pyunits.g / pyunits.mol,
-            {"Ca_2+": 1, "H2O": 1},
-            min_dose=0.1,
-            max_dose=3000,
-            purity=1,
-            cost=0.155,
-        )
 
 
 class ViablePrecipitants(ViablePrecipitantsBase):

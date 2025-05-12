@@ -3,7 +3,7 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
     WaterTapFlowsheetBlockData,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
-    ViableReagentsBase,
+    ViableReagents,
     ReaktoroOptionsContainer,
 )
 from watertap.core.solvers import get_solver
@@ -37,32 +37,6 @@ from reaktoro_pse.reaktoro_block import ReaktoroBlock
 from collections import OrderedDict
 
 __author__ = "Alexander Dudchenko"
-
-
-class ViableReagents(ViableReagentsBase):
-    def __init__(self):
-        self.register_reagent(
-            "HCl",
-            36.46 * pyunits.g / pyunits.mol,
-            {"Cl_-": 1, "H2O": 1},
-            min_dose=0.1,
-            max_dose=3000,
-            purity=0.38,
-            solvent=("H2O", 18.01 * pyunits.g / pyunits.mol),
-            cost=0.17,
-            density_reagent=1.18 * pyunits.kg / pyunits.liter,
-        )
-        self.register_reagent(
-            "H2SO4",
-            98.08 * pyunits.g / pyunits.mol,
-            {"SO4_2-": 1, "H2O": 1},
-            min_dose=0.1,
-            max_dose=3000,
-            purity=0.93,
-            solvent=("H2O", 18.01 * pyunits.g / pyunits.mol),
-            cost=0.12,
-            density_reagent=1.8136 * pyunits.kg / pyunits.liter,
-        )
 
 
 @declare_process_block_class("ChemicalAdditionUnit")

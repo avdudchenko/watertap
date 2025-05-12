@@ -2,9 +2,12 @@ import pytest
 from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.precipitation_unit import (
     PrecipitationUnit,
     ViablePrecipitants,
+)
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ViableReagents,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multicomponent_feed import (
+
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multi_comp_feed_product import (
     build_case,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (
@@ -55,7 +58,7 @@ def test_precip_default():
             ].value,
             1e-5,
         )
-        == 4.2935e-05
+        == 4.2934097847089723e-05
     )
 
 
@@ -150,7 +153,7 @@ def test_precipitation_with_all_options():
     m.fs.precipitation = PrecipitationUnit(
         default_property_package=m.fs.properties,
         selected_precipitants=ViablePrecipitants().keys(),
-        selected_reagents=ViableReagents().keys(),
+        selected_reagents=["CaO", "Na2CO3"],
     )
     m.fs.precipitation.fix_and_scale()
 
@@ -176,7 +179,7 @@ def test_precipitation_with_all_options():
             ].value,
             1e-5,
         )
-        == 4.2935e-05
+        == 4.293409784706255e-05
     )
     assert (
         pytest.approx(
@@ -297,5 +300,5 @@ def test_precipitation_with_custom_options():
             ].value,
             1e-5,
         )
-        == 1.7223085987945725e-06
+        == 1.7218732627512498e-06
     )

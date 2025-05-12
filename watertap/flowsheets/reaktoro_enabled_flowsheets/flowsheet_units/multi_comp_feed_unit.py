@@ -82,10 +82,10 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "pressure",
         ConfigValue(
-            default=1e5,
-            description="Temperature of feed (must be in Kelvin)",
+            default=1 * pyunits.atm,
+            description="Pressure of feed (must be in Pa or with py units)",
             doc="""
-                Temperature of feed (must be in Kelvin)
+                Pressure of feed (must be in Pa or with py units)
             """,
         ),
     )

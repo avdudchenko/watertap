@@ -2,10 +2,10 @@ import pytest
 from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_pump_unit import (
     MultiCompPumpUnit,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_ro import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_ro_unit import (
     MultiCompROUnit,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multicomponent_feed import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multi_comp_feed_product import (
     build_case,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (

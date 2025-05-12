@@ -1,6 +1,9 @@
 import pytest
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_feed import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_feed_unit import (
     MultiCompFeed,
+)
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_product_unit import (
+    MultiCompProduct,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.water_sources.source_water_importer import (
     get_source_water_data,
@@ -15,8 +18,10 @@ from watertap.property_models.multicomp_aq_sol_prop_pack import (
     ActivityCoefficientModel,
     DensityCalculation,
 )
+
+
 from pyomo.environ import (
-    assert_optimal_termination,
+    TransformationFactory,
 )
 from idaes.core.util.model_statistics import degrees_of_freedom
 
@@ -62,6 +67,39 @@ def test_mc_feed():
     assert (
         pytest.approx(
             m.fs.feed.feed.properties[0].flow_mass_phase_comp["Liq", "Ca_2+"].value,
+            1e-2,
+        )
+        == 0.0002580
+    )
+
+
+@pytest.mark.component
+def test_product():
+    m = build_case("USDA_brackish", False)
+    m.fs.feed.report(use_default_units=True)
+    m.fs.product = MultiCompProduct(
+        default_property_package=m.fs.properties,
+    )
+
+    m.fs.feed.outlet.connect_to(m.fs.product.inlet)
+    TransformationFactory("network.expand_arcs").apply_to(m)
+    assert degrees_of_freedom(m) == 0
+    iscale.calculate_scaling_factors(m)
+    m.fs.feed.initialize()
+    m.fs.product.initialize()
+    assert pytest.approx(m.fs.product.product.pH.value, 1e-1) == 7
+    assert (
+        pytest.approx(
+            m.fs.product.product.properties[0].flow_mass_phase_comp["Liq", "H2O"].value,
+            1e-2,
+        )
+        == 0.99663795
+    )
+    assert (
+        pytest.approx(
+            m.fs.product.product.properties[0]
+            .flow_mass_phase_comp["Liq", "Ca_2+"]
+            .value,
             1e-2,
         )
         == 0.0002580

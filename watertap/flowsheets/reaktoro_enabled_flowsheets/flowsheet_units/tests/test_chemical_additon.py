@@ -1,9 +1,12 @@
 import pytest
 from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.chemical_addition_unit import (
     ChemicalAdditionUnit,
+)
+
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ViableReagents,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multicomponent_feed import (
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.tests.test_multi_comp_feed_product import (
     build_case,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (
@@ -137,7 +140,7 @@ def test_acidification_with_all_options():
     m = build_case("USDA_brackish", True)
     m.fs.acidification = ChemicalAdditionUnit(
         default_property_package=m.fs.properties,
-        selected_reagents=ViableReagents().keys(),
+        selected_reagents=["HCl", "H2SO4"],
     )
     m.fs.acidification.fix_and_scale()
 

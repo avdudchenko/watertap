@@ -140,7 +140,9 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
 
         self.feed = Feed(property_package=self.config.default_property_package)
 
-        self.feed.pH = Var(initialize=self.config.pH, units=pyunits.dimensionless)
+        self.feed.pH = Var(
+            initialize=self.config.pH, bounds=(1, 12), units=pyunits.dimensionless
+        )
         self.register_port("outlet", self.feed.outlet, {"pH": self.feed.pH})
 
     def set_fixed_operation(self, solver=None):
@@ -248,11 +250,12 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         assert degrees_of_freedom(self) == 0
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.feed.pH, 1)
+        iscale.set_scaling_factor(self.feed.pH, 1 / 1000)
         self.scale_feed()
 
     def scale_feed(self):
         for idx in self.feed.properties[0].flow_mol_phase_comp:
+
             scale = 1 / self.feed.properties[0].flow_mol_phase_comp[idx].value
             self.config.default_property_package.set_default_scaling(
                 "flow_mol_phase_comp", scale, index=idx

@@ -55,11 +55,12 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         )
         if self.config.default_costing_package is not None:
             self.ERD.costing = UnitModelCostingBlock(
-                flowsheet_costing_block=self.config.default_costing_package
+                flowsheet_costing_block=self.config.default_costing_package,
+                **self.config.default_costing_package_kwargs
             )
         # Add ERD flow rate
         self.ERD.control_volume.properties_in[0].flow_vol_phase[...]
-        self.ERD.pH = Var(initialize=7, units=pyunits.dimensionless)
+        self.ERD.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
 
         self.register_port("inlet", self.ERD.inlet, {"pH": self.ERD.pH})
         self.register_port("outlet", self.ERD.outlet, {"pH": self.ERD.pH})
@@ -72,14 +73,12 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         self.ERD.control_volume.properties_out[0].pressure.fix(
             self.config.erd_outlet_pressure
         )
-        self.inlet.fix()
-        assert degrees_of_freedom(self) == 0
-        self.inlet.unfix()
 
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.ERD.inlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.control_volume.work, 1e-4)
+        iscale.set_scaling_factor(self.ERD.pH, 1 / 1000)
 
     def initialize_unit(self):
         self.ERD.initialize()
@@ -106,7 +105,6 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
                 "Pressure": self.ERD.outlet.pressure[0],
             },
         }
-        self.config.default_costing_package.display()
         if self.config.default_costing_package is not None:
             model_state_dict["Costs"] = {
                 "Capital cost": self.ERD.costing.capital_cost,

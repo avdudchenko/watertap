@@ -108,7 +108,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         )
         if self.config.default_costing_package is not None:
             self.chemical_reactor.costing = UnitModelCostingBlock(
-                flowsheet_costing_block=self.config.default_costing_package
+                flowsheet_costing_block=self.config.default_costing_package,
+                **self.config.default_costing_package_kwargs,
             )
 
             self.chemical_reactor.reagent_cost = Param(
@@ -160,7 +161,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             for solvent in solvents:
                 reagents[solvent] = self.chemical_reactor.flow_mol_solvent[solvent]
 
-        outputs = {("pH", None): self.chemical_reactor.pH["outlet"]}
+        outputs = {("pHDirect", None): self.chemical_reactor.pH["outlet"]}
 
         self.reaktoro_options = ReaktoroOptionsContainer()
         self.reaktoro_options.system_state_option(
@@ -185,7 +186,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         )
         self.reaktoro_options["chemistry_modifier"] = reagents
         self.reaktoro_options["outputs"] = outputs
-
+        self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.chemistry_block = ReaktoroBlock(**self.reaktoro_options)
 
     def set_fixed_operation(self):
@@ -200,14 +201,17 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 options["max_dose"] / 1000
             )
             self.chemical_reactor.flow_mol_reagent[reagent].setlb(None)
-        self.inlet.fix()
-        assert degrees_of_freedom(self) == 0
-        self.inlet.unfix()
+
+    def set_optimization_operation(self):
+        """if we have reaktoro chemistry, we need to unfix reagent addition"""
+        if self.config.add_reaktoro_chemistry:
+            for reagent, _ in self.selected_reagents.items():
+                self.chemical_reactor.reagent_dose[reagent].unfix()
 
     def scale_before_initialization(self, **kwargs):
         max_dose = []
         for reagent, options in self.selected_reagents.items():
-            dose_scale = options["max_dose"]
+            dose_scale = options["max_dose"] / 1000
             max_dose.append(dose_scale)
             # use mol flow, as thats what will be propagated by default via mcas
             mass_flow_scale = dose_scale / value(
@@ -221,7 +225,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             iscale.set_scaling_factor(
                 self.chemical_reactor.reagent_dose[reagent], dose_scale
             )
-        iscale.set_scaling_factor(self.chemical_reactor.pH, 1)
+        iscale.set_scaling_factor(self.chemical_reactor.pH, 1 / 10)
 
     def initialize_unit(self, **kwargs):
         self.chemical_reactor.initialize()

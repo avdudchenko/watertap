@@ -226,7 +226,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
 
     def scale_before_initialization(self, **kwargs):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
-        iscale.set_scaling_factor(self.mixer.pH, 1)
+        iscale.set_scaling_factor(self.mixer.pH, 1 / 1000)
 
     def initialize_streams(self, **kwargs):
         if self.config.guess_secondary_inlet_composition:
@@ -280,11 +280,8 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             data_dict["Pressure"] = stream.pressure
             return data_dict
 
-        for inlet in self.config.inlet_ports:
-            getattr(self, f"{inlet}").fix()
         unit_dofs = degrees_of_freedom(self)
-        for inlet in self.config.inlet_ports:
-            getattr(self, f"{inlet}").unfix()
+
         model_state = {
             "Model": {"DOFs": unit_dofs},
         }

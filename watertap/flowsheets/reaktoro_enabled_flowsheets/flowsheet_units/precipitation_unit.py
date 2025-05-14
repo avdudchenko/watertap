@@ -163,7 +163,8 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         )
         if self.config.default_costing_package is not None:
             self.precipitation_reactor.costing = UnitModelCostingBlock(
-                flowsheet_costing_block=self.config.default_costing_package
+                flowsheet_costing_block=self.config.default_costing_package,
+                **self.config.default_costing_package_kwargs,
             )
 
             self.precipitation_reactor.reagent_cost = Param(
@@ -186,7 +187,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                     self.precipitation_reactor.flow_mass_reagent[reagent],
                     f"{self.name}_reagent_{reagent}".replace(".", "_"),
                 )
-        self.add_sludge_mass_estimation()
+        # self.add_sludge_mass_estimation()
         if self.config.add_reaktoro_chemistry:
             self.add_reaktoro_chemistry()
         else:
@@ -244,7 +245,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             for solvent in solvents:
                 reagents[solvent] = self.precipitation_reactor.flow_mol_solvent[solvent]
 
-        outputs = {("pH", None): self.precipitation_reactor.pH["outlet"]}
+        outputs = {("pHDirect", None): self.precipitation_reactor.pH["outlet"]}
         for phase, obj in self.precipitation_reactor.flow_mol_precipitate.items():
             outputs[("speciesAmount", phase)] = obj
 
@@ -280,37 +281,43 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
 
     def set_fixed_operation(self):
         for reagent, options in self.selected_reagents.items():
+            self.precipitation_reactor.reagent_dose[reagent].fix(10 / 1000)
             self.precipitation_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000
             )
             self.precipitation_reactor.reagent_dose[reagent].setub(
                 options["max_dose"] / 1000
             )
-            self.precipitation_reactor.flow_mol_reagent[reagent].setlb(None)
+            self.precipitation_reactor.flow_mol_reagent[reagent].setlb(0)
 
         self.precipitation_reactor.waste_mass_frac_precipitate.fix(0.2)
 
         for precip in self.selected_precipitants.keys():
-            self.precipitation_reactor.flow_mol_precipitate[precip].setlb(None)
+            self.precipitation_reactor.flow_mol_precipitate[precip].setlb(0)
             if self.config.add_reaktoro_chemistry == False:
                 self.precipitation_reactor.flow_mol_precipitate[precip].fix(1e-5)
-        for reagent, _ in self.selected_reagents.items():
-            self.precipitation_reactor.reagent_dose[reagent].fix(10 / 1000)
 
-        self.inlet.fix()
-        assert degrees_of_freedom(self) == 0
-        self.inlet.unfix()
+    def set_optimization_operation(self):
+        """if we have reaktoro chemistry, we need to unfix the precipitate flow and reagent addition"""
+        if self.config.add_reaktoro_chemistry:
+            for phase, data in self.selected_precipitants.items():
+                self.precipitation_reactor.flow_mol_precipitate[phase].unfix()
+                self.precipitation_reactor.flow_mass_precipitate[phase].unfix()
+            for reagent, options in self.selected_reagents.items():
+                self.precipitation_reactor.reagent_dose[reagent].unfix()
 
     def scale_before_initialization(self, **kwargs):
         max_dose = []
         for reagent, options in self.selected_reagents.items():
-            dose_scale = options["max_dose"]
+            dose_scale = options["max_dose"] / 1000  #
             max_dose.append(dose_scale)
             # use mol flow, as thats what will be propagated by default via mcas
             mass_flow_scale = dose_scale / value(
                 self.precipitation_reactor.inlet.flow_mol_phase_comp[0.0, "Liq", "H2O"]
                 * (18.015 / 1000)
             )
+            print(reagent, mass_flow_scale)
+            # assert False
             iscale.set_scaling_factor(
                 self.precipitation_reactor.flow_mass_reagent[reagent],
                 mass_flow_scale,
@@ -337,16 +344,15 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor.flow_mass_precipitate[precip],
                 precip_scale,
             )
-        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1)
+        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1 / 1000)
         if self.config.add_reaktoro_chemistry:
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
                 self.precipitation_reactor, self.precipitation_reactor.flow_mol_reagent
             )
         else:
-            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1)
+            iscale.constraint_scaling_transform(self.eq_outlet_pH, 10)
 
     def initialize_unit(self, **kwargs):
-
         for phase, data in self.selected_precipitants.items():
             # assume that only fraction of ions will actually precipitate
             flow = (
@@ -365,6 +371,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             self.precipitation_reactor.initialize()
             for phase, data in self.selected_precipitants.items():
                 self.precipitation_reactor.flow_mol_precipitate[phase].unfix()
+                self.precipitation_reactor.flow_mass_precipitate[phase].unfix()
 
     def get_model_state_dict(self):
         def get_ion_comp(stream, pH):
@@ -378,9 +385,8 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             data_dict["Pressure"] = stream.pressure
             return data_dict
 
-        self.inlet.fix()
         unit_dofs = degrees_of_freedom(self)
-        self.inlet.unfix()
+
         model_state_dict = {
             "Model": {"DOFs": unit_dofs},
             "Inlet state": get_ion_comp(

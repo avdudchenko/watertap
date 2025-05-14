@@ -14,10 +14,9 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.connection_utility im
     PortContainer,
     ConnectionContainer,
 )
-import pandas as pd
-from pyomo.common.formatting import tabular_writer
-from idaes.core.util.units_of_measurement import report_quantity
-import sys
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.report_util import (
+    build_report_table,
+)
 
 
 @declare_process_block_class("WaterTapFlowsheetBlock")
@@ -30,6 +29,16 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
             description="defines default costing package",
             doc="""
                 defines default costing package
+            """,
+        ),
+    )
+    CONFIG.declare(
+        "default_costing_package_kwargs",
+        ConfigValue(
+            default={},
+            description="kwargs to pass into the Costing unit block",
+            doc="""
+                kwargs to pass into the Costing unit block,
             """,
         ),
     )
@@ -154,92 +163,13 @@ class WaterTapFlowsheetBlockData(FlowsheetBlockData):
         else:
             return None
 
-    def build_report_table(
-        self, unit_name, data_dict, ostream=None, prefix=None, use_default_units=False
-    ):
-        """Builds a report table for the unit model
-        Args:
-            unit_name: Name of the unit
-            data_dict: Dictionary containing data to report
-            ostream: Output stream for the report (default: sys.stdout)
-            prefix: String prefix for formatting the report
-            use_default_units: Boolean to indicate if default units should be used
-        """
-
-        def _get_fixed_state(v):
-            """Get the fixed state of a variable, if none exists then return N/A"""
-            try:
-                return v.fixed
-            except AttributeError:
-                return "N/A"
-
-        def _get_bounds(v):
-            """Get the bounds of a variable, if none exists then return N/A"""
-            try:
-                return v.bounds
-            except AttributeError:
-                return "N/A"
-
-        def get_values(k, v):
-            """Get the values of a variable,  dimensions, fixed state and bounds"""
-            if isinstance(v, int):
-                return [
-                    v,
-                    "dimensionless",
-                    "N/A",
-                    "N/A",
-                ]
-            elif isinstance(v, float):
-                return [
-                    "{:#.5g}".format(v),
-                    "dimensionless",
-                    "N/A",
-                    "N/A",
-                ]
-            elif use_default_units:
-                return [
-                    "{:#.5g}".format(report_quantity(v).m),
-                    report_quantity(v).u,
-                    _get_fixed_state(v),
-                    _get_bounds(v),
-                ]
-            else:
-                return [
-                    "{:#.5g}".format(value(v)),
-                    pyunits.get_units(v),
-                    _get_fixed_state(v),
-                    _get_bounds(v),
-                ]
-
-        if ostream is None:
-            ostream = sys.stdout
-        max_str_length = 84
-        tab = " " * 4
-        ostream.write("\n" + "-" * max_str_length + "\n")
-        ostream.write(f"{prefix}{tab}{unit_name} state")
-        ostream.write("\n" * 2)
-        for key, sub_data in data_dict.items():
-
-            ostream.write(f"{prefix}{tab}{key}: \n")
-            tabular_writer(
-                ostream,
-                prefix + tab,
-                ((k, v) for k, v in sub_data.items()),
-                ("Value", "Units", "Fixed", "Bounds"),
-                get_values,
-                sort_rows=False,
-            )
-            ostream.write(f"\n")
-
-        ostream.write("-" * max_str_length + "\n")
-
     def report(
         self, time_point=0, dof=False, ostream=None, prefix="", use_default_units=False
     ):
         unit_name, defined_variables = self.get_model_state_dict()
 
         if unit_name is not None:
-            self.build_report_table(
+            build_report_table(
                 unit_name, defined_variables, ostream, prefix, use_default_units
             )
         if unit_name is None:

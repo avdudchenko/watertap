@@ -59,6 +59,16 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         ),
     )
     CONFIG.declare(
+        "maximum_pressure",
+        ConfigValue(
+            default=300e5,
+            description="Maximum pressure for pump unit",
+            doc="""
+            Sets the maximum pressure for the pump unit
+            """,
+        ),
+    )
+    CONFIG.declare(
         "pump_efficiency",
         ConfigValue(
             default=0.8,
@@ -79,7 +89,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
             )
         # Add pump flow rate
         self.pump.control_volume.properties_in[0].flow_vol_phase[...]
-        self.pump.pH = Var(initialize=7, units=pyunits.dimensionless)
+        self.pump.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
 
         self.register_port("inlet", self.pump.inlet, {"pH": self.pump.pH})
         self.register_port("outlet", self.pump.outlet, {"pH": self.pump.pH})
@@ -100,15 +110,19 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
             )
         else:
             self.pump.outlet.pressure[0].fix(self.config.initialization_pressure)
-
+        self.pump.outlet.pressure[0].setub(self.config.maximum_pressure)
         self.pump.efficiency_pump[0].fix(self.config.pump_efficiency)
         self.inlet.fix()
         assert degrees_of_freedom(self) == 0
         self.inlet.unfix()
 
+    def set_optimization_operation(self):
+        self.pump.outlet.pressure[0].unfix()
+
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.pump.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.pump.control_volume.work, 1e-4)
+        iscale.set_scaling_factor(self.pump.pH, 1 / 1000)
 
     def initialize_unit(self):
         self.set_fixed_operation()
@@ -116,9 +130,8 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
 
     def get_model_state_dict(self):
         """Returns a dictionary with the model state"""
-        self.inlet.fix()
+
         unit_dofs = degrees_of_freedom(self)
-        self.inlet.unfix()
 
         model_state_dict = {
             "Model": {"DOFs": unit_dofs},

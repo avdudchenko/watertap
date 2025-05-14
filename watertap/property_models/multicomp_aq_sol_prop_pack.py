@@ -11,10 +11,10 @@
 #################################################################################
 """
 This property package computes a multi-component aqueous solution that can
-contain ionic and/or neutral solute species. It supports basic calculation 
-of component quantities and some physical, chemical and electrical properties. 
+contain ionic and/or neutral solute species. It supports basic calculation
+of component quantities and some physical, chemical and electrical properties.
 
-This property package was formerly named the "ion_DSPMDE_prop_pack" and was originally 
+This property package was formerly named the "ion_DSPMDE_prop_pack" and was originally
 designed for use with the Donnan Steric Pore Model with Dielectric Exclusion (DSPMDE) for
 nanofiltration.
 """
@@ -2249,9 +2249,9 @@ class MCASStateBlockData(StateBlockData):
             return self.flow_mass_phase_comp[p, j]
 
     # TODO: add enthalpy terms later
-    # def get_enthalpy_flow_terms(self, p):
-    #     """Create enthalpy flow terms."""
-    #     return self.enth_flow
+    def get_enthalpy_flow_terms(self, p):
+        """Create enthalpy flow terms."""
+        return self.enth_flow
 
     # TODO: make property package compatible with dynamics
     # def get_material_density_terms(self, p, j):

@@ -43,10 +43,13 @@ class MultiCompProductData(WaterTapFlowsheetBlockData):
 
         self.product = Product(property_package=self.config.default_property_package)
 
-        self.product.pH = Var(initialize=7, units=pyunits.dimensionless)
+        self.product.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
         self.register_port("inlet", self.product.inlet, {"pH": self.product.pH})
         self.product.properties[0].conc_mass_phase_comp[...]
         self.product.properties[0].flow_mass_phase_comp[...]
+
+    def scale_before_initialization(self, **kwargs):
+        iscale.set_scaling_factor(self.product.pH, 1 / 1000)
 
     def initialize_unit(self, solver=None, tee=True):
         self.product.initialize()

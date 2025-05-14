@@ -35,7 +35,7 @@ from idaes.core import (
 from idaes.core import UnitModelCostingBlock
 
 import idaes.core.util.scaling as iscale
-
+from idaes.core.util.initialization import fix_state_vars, revert_state_vars
 from idaes.models.unit_models import (
     Translator,
 )
@@ -156,11 +156,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
         if self.config.default_costing_package is not None:
             self.ro_unit.costing = UnitModelCostingBlock(
-                flowsheet_costing_block=self.config.default_costing_package
+                flowsheet_costing_block=self.config.default_costing_package,
+                **self.config.default_costing_package_kwargs
             )
-        self.ro_feed.pH = Var(initialize=7, units=pyunits.dimensionless)
-        self.ro_retentate.pH = Var(initialize=7, units=pyunits.dimensionless)
-        self.ro_product.pH = Var(initialize=7, units=pyunits.dimensionless)
+        self.ro_feed.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
+        self.ro_retentate.pH = Var(
+            initialize=7, bounds=(1, 12), units=pyunits.dimensionless
+        )
+        self.ro_product.pH = Var(
+            initialize=7, bounds=(1, 12), units=pyunits.dimensionless
+        )
 
         self.register_port("feed", self.ro_feed.inlet, {"pH": self.ro_feed.pH})
         self.register_port(
@@ -363,6 +368,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             for scalant in self.config.selected_scalants.keys():
                 self.ro_unit.eq_max_scaling_tendency[scalant].activate()
                 self.ro_unit.scaling_tendency[scalant].unfix()
+                self.ro_unit.maximum_scaling_tendency[scalant].fix()
 
     def deactivate_scaling_constraints(self):
         """deactivates scaling constraints"""
@@ -391,9 +397,9 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
     def add_reaktoro_chemistry(self):
         """add water removal constraint, and relevant reaktoro block"""
 
-        outputs = {("pH", None): self.ro_retentate.pH}
+        outputs = {("pHDirect", None): self.ro_retentate.pH}
         for scalant in self.ro_unit.scaling_tendency:
-            outputs[("scalingTendency", scalant)] = self.ro_unit.scaling_tendency[
+            outputs[("scalingTendencyDirect", scalant)] = self.ro_unit.scaling_tendency[
                 scalant
             ]
 
@@ -484,14 +490,18 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_unit.recovery_vol_phase[0.0, "Liq"].unfix()
         self.ro_unit.recovery_vol_phase[0.0, "Liq"].setlb(0.2)
         self.ro_unit.recovery_vol_phase[0.0, "Liq"].setub(0.95)
+        self.activate_scaling_constraints()
 
     def scale_before_initialization(self, **kwargs):
         """scales the unit before initialization"""
+        iscale.set_scaling_factor(self.ro_feed.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.ro_product.pH, 1 / 1000)
         # scale monotone cp constraint if it exists
         if self.ro_unit.find_component("monotone_cp_constraint") is not None:
             for eq in self.ro_unit.monotone_cp_constraint:
                 iscale.constraint_scaling_transform(
-                    self.ro_unit.monotone_cp_constraint[eq], 1 / 100
+                    self.ro_unit.monotone_cp_constraint[eq], 1
                 )
 
         # Get the scaling factors for the RO property package and default property package
@@ -528,14 +538,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         # scale water removal constraint if it exists
         if self.ro_unit.find_component("eq_water_removed_at_interface") is not None:
             iscale.constraint_scaling_transform(
-                self.ro_unit.eq_water_removed_at_interface,
-                prop_scaling["H2O"]
-                * value(self.config.default_property_package.mw_comp["H2O"]),
+                self.ro_unit.eq_water_removed_at_interface, prop_scaling["H2O"]
             )
             iscale.set_scaling_factor(
-                self.ro_unit.water_removed_at_interface,
-                prop_scaling["H2O"]
-                * value(self.config.default_property_package.mw_comp["H2O"]),
+                self.ro_unit.water_removed_at_interface, prop_scaling["H2O"]
             )
         # scale ph constraints
         if self.ro_retentate.find_component("eq_ph_equality") is not None:
@@ -579,28 +585,51 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             ]
 
             scale_factors[ion] = sf
-            tds_sf.append(sf / value(self.config.default_property_package.mw_comp[ion]))
+            tds_sf.append(sf * value(self.config.default_property_package.mw_comp[ion]))
 
         tds_sf = sum(tds_sf)
         scale_factors[self.ro_solute_type] = tds_sf
         return scale_factors
 
+    def init_translator_block(self, block, additonal_var_to_fix=None):
+        """initializes translator block"""
+        block.initialize()
+        if additonal_var_to_fix is not None:
+            if not isinstance(additonal_var_to_fix, list):
+                additonal_var_to_fix = [additonal_var_to_fix]
+            for var in additonal_var_to_fix:
+                var.fix()
+        flags = fix_state_vars(block.properties_in)
+        solver = get_solver()
+        results = solver.solve(block, tee=False)
+        assert_optimal_termination(results)
+        revert_state_vars(block.properties_in, flags)
+        if additonal_var_to_fix is not None:
+            for var in additonal_var_to_fix:
+                var.unfix()
+
     def initialize_unit(self):
-        self.ro_feed.initialize()
+        self.init_translator_block(self.ro_feed)
         propagate_state(self.feed_to_ro)
         self.ro_unit.initialize()
         propagate_state(self.ro_to_product)
         propagate_state(self.ro_to_retentate)
-        self.ro_retentate.initialize()
-        self.ro_product.initialize()
+        self.ro_feed.properties_in[
+            0
+        ].flow_mol_phase_comp.fix()  # need to fix for initialization
+        self.init_translator_block(
+            self.ro_retentate, self.ro_feed.properties_in[0].flow_mol_phase_comp
+        )
+        self.init_translator_block(
+            self.ro_product, self.ro_feed.properties_in[0].flow_mol_phase_comp
+        )
+        self.ro_feed.properties_in[0].flow_mol_phase_comp.unfix()
         if self.config.add_reaktoro_chemistry:
             self.scaling_block.initialize()
 
     def get_model_state_dict(self):
         """Returns a dictionary with the model state"""
-        self.feed.fix()
         unit_dofs = degrees_of_freedom(self)
-        self.feed.unfix()
         ro_domains = list(self.ro_unit.length_domain)
         model_state_dict = {
             "Model": {"DOFs": unit_dofs},

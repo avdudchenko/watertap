@@ -21,6 +21,8 @@ from pyomo.environ import (
     Reals,
     units as pyunits,
 )
+import math
+from pyomo.environ import log10, log, exp
 from pyomo.common.config import ConfigValue
 from watertap.unit_models.pressure_changer import Pump
 from idaes.core import (
@@ -104,7 +106,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             ["inlet", "outlet"],
             initialize=7,
             units=pyunits.dimensionless,
-            bounds=(1, 12),
+            bounds=(0, 13),
         )
         if self.config.default_costing_package is not None:
             self.chemical_reactor.costing = UnitModelCostingBlock(
@@ -154,14 +156,17 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         solvents = self.config.viable_reagents.create_solvent_constraint(
             self.chemical_reactor, self.chemical_reactor.flow_mol_reagent
         )
+
         reagents = {}
         for r in self.selected_reagents:
             reagents[r] = self.chemical_reactor.flow_mol_reagent[r]
+
         if solvents is not None:
+
             for solvent in solvents:
                 reagents[solvent] = self.chemical_reactor.flow_mol_solvent[solvent]
 
-        outputs = {("pHDirect", None): self.chemical_reactor.pH["outlet"]}
+        outputs = {("pH", None): self.chemical_reactor.pH["outlet"]}
 
         self.reaktoro_options = ReaktoroOptionsContainer()
         self.reaktoro_options.system_state_option(
@@ -184,6 +189,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options["register_new_chemistry_modifiers"] = (
             self.config.viable_reagents.get_reaktoro_chemistry_modifiers()
         )
+
+        # self.reaktoro_options["chemistry_modifier_log10_basis"] = True
         self.reaktoro_options["chemistry_modifier"] = reagents
         self.reaktoro_options["outputs"] = outputs
         self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
@@ -192,7 +199,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
     def set_fixed_operation(self):
         """fixes operation point for chemical addition unit model"""
         for reagent, _ in self.selected_reagents.items():
-            self.chemical_reactor.reagent_dose[reagent].fix(10 / 1000)
+            self.chemical_reactor.reagent_dose[reagent].fix(50 / 1000)
         for reagent, options in self.selected_reagents.items():
             self.chemical_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000
@@ -200,7 +207,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             self.chemical_reactor.reagent_dose[reagent].setub(
                 options["max_dose"] / 1000
             )
-            self.chemical_reactor.flow_mol_reagent[reagent].setlb(None)
+            self.chemical_reactor.flow_mol_reagent[reagent].setlb(0)
 
     def set_optimization_operation(self):
         """if we have reaktoro chemistry, we need to unfix reagent addition"""
@@ -211,12 +218,24 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
     def scale_before_initialization(self, **kwargs):
         max_dose = []
         for reagent, options in self.selected_reagents.items():
-            dose_scale = options["max_dose"] / 1000
+            dose_scale = options["max_dose"]  # / 100  # * 1e-3
             max_dose.append(dose_scale)
             # use mol flow, as thats what will be propagated by default via mcas
-            mass_flow_scale = dose_scale / value(
-                self.chemical_reactor.inlet.flow_mol_phase_comp[0.0, "Liq", "H2O"]
-                * (18.015 / 1000)
+            mass_flow_scale = dose_scale / (
+                self.config.default_property_package._default_scaling_factors[
+                    "flow_mol_phase_comp", ("Liq", "H2O")
+                ]
+                / value(self.config.default_property_package.mw_comp["H2O"])
+            )
+            mol_scale = mass_flow_scale * value(
+                pyunits.convert(
+                    self.config.viable_reagents[reagent]["mw"],
+                    pyunits.kg / pyunits.mol,
+                )
+            )
+            iscale.set_scaling_factor(
+                self.chemical_reactor.flow_mol_reagent[reagent],
+                mol_scale,
             )
             iscale.set_scaling_factor(
                 self.chemical_reactor.flow_mass_reagent[reagent],
@@ -225,12 +244,12 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             iscale.set_scaling_factor(
                 self.chemical_reactor.reagent_dose[reagent], dose_scale
             )
+
         iscale.set_scaling_factor(self.chemical_reactor.pH, 1 / 10)
 
     def initialize_unit(self, **kwargs):
         self.chemical_reactor.initialize()
         if self.config.add_reaktoro_chemistry:
-            # get intial mole flows
             self.chemistry_block.initialize()
             self.chemistry_block.display_jacobian_scaling()
             # recalcualte state with updated mol flow values
@@ -258,6 +277,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 self.chemical_reactor.pH["inlet"],
             ),
             "Chemical dosing:": self.chemical_reactor.reagent_dose,
+            "Chemical mass flow:": self.chemical_reactor.flow_mass_reagent,
             "Treated state": get_ion_comp(
                 self.chemical_reactor.dissolution_reactor.properties_out[0],
                 self.chemical_reactor.pH["outlet"],

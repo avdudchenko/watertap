@@ -28,6 +28,9 @@ from watertap.core.util.initialization import interval_initializer
 import idaes.core.util.scaling as iscale
 from reaktoro_pse.reaktoro_block import ReaktoroBlock
 import idaes.logger as idaeslog
+from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
+    ReaktoroOptionsContainer,
+)
 
 _log = idaeslog.getLogger(__name__)
 
@@ -100,12 +103,23 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         ),
     )
     CONFIG.declare(
-        "charge_balance_with_reaktoro",
+        "alkalinity_as_CaCO3",
         ConfigValue(
-            default=False,
-            description="To charge balance with Reaktoro",
+            default=None,
+            description="Alkalinity target for the feed",
             doc="""
-                To use Reaktoro to charge balance feed during initialization
+                If value is not None, will use it to reconcile alkalinity, should be provided 
+                on basis of CaCO3 (mg/L)
+            """,
+        ),
+    )
+    CONFIG.declare(
+        "reconcile_using_reaktoro",
+        ConfigValue(
+            default=True,
+            description="Will reconcile feed using reaktoro",
+            doc="""
+                Reconciles feed for charge and alkalinity using reaktoro.
             """,
         ),
     )
@@ -120,17 +134,22 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         ),
     )
     CONFIG.declare(
+        "alkalinity_balance_ions",
+        ConfigValue(
+            default="HCO3_-",
+            description="Apparent species that should be adjusted to reach target alkalinity",
+            doc="""
+            Apparent species that should be adjusted to reach target alkalinity
+            """,
+        ),
+    )
+    CONFIG.declare(
         "reaktoro_options",
         ConfigValue(
-            default={
-                "activity_model": "ActivityModelPitzer",
-                "database": "PhreeqcDatabase",
-                "database_file": "pitzer.dat",
-                "reaktoro_block_manager": None,
-            },
-            description="Options for configuring Reaktoro-PSE",
+            default=None,
+            description="User options for configuring Reaktoro-PSE",
             doc="""
-            Options for configuring Reaktoro-PSE
+            User can provide additional reaktoro options, or override defaults provided by ReaktoroOptionsContainer class
             """,
         ),
     )
@@ -139,11 +158,15 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         super().build()
 
         self.feed = Feed(property_package=self.config.default_property_package)
+        self.feed.properties[0].flow_vol_phase["Liq"]
 
         self.feed.pH = Var(
-            initialize=self.config.pH, bounds=(1, 12), units=pyunits.dimensionless
+            initialize=self.config.pH, bounds=(0, 13), units=pyunits.dimensionless
         )
         self.register_port("outlet", self.feed.outlet, {"pH": self.feed.pH})
+        if self.config.alkalinity_as_CaCO3 is not None:
+            self.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
+            self.feed.alkalinity_as_CaCO3.fix(self.config.alkalinity_as_CaCO3)
 
     def set_fixed_operation(self, solver=None):
         """sets fixed unit operation"""
@@ -175,14 +198,16 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         # Doing a solve with out scaling -this in general works
         # as we have a simple problem, but soluton might be sub optimal
         # this will still give a good intial state however to move forward
+
         interval_initializer(self.feed)
         if solver is None:
             solver = get_solver()
         result = solver.solve(self.feed, tee=False)
+
         assert_optimal_termination(result)
         assert degrees_of_freedom(self.feed) == 0
 
-    def balance_charge_with_reaktoro(self):
+    def reaktoro_reconciliation(self):
         self.feed.charge = Var(units=pyunits.dimensionless)
         initial_con = value(
             pyunits.convert(
@@ -192,41 +217,59 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                 to_units=pyunits.g / pyunits.L,
             )
         )
+
+        outputs = {("charge", None): self.feed.charge}
+
+        if self.config.alkalinity_as_CaCO3 is not None:
+            outputs[("alkalinityAsCaCO3", None)] = self.feed.alkalinity_as_CaCO3
+
         self.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].unfix()
-
-        self.feed.charge_balance_block = ReaktoroBlock(
-            system_state={
-                "temperature": self.feed.properties[0].temperature,
-                "pressure": self.feed.properties[0].pressure,
-                "pH": self.feed.pH,
-            },
-            aqueous_phase={
-                "composition": self.feed.properties[
-                    0
-                ].flow_mol_phase_comp,  # This is the spices mass flow
-                "convert_to_rkt_species": True,  # We can use default converter as its defined for default database (Phreeqc and pitzer)
-                "activity_model": self.config.reaktoro_options[
-                    "activity_model"
-                ],  # Can provide a string, or Reaktoro initialized class
-                "fixed_solvent_specie": "H2O",  # We need to define our aqueous solvent as we have to speciate the block
-            },
-            outputs={("charge", None): self.feed.charge},
-            assert_charge_neutrality=False,
-            database=self.config.reaktoro_options[
-                "database"
-            ],  # can also be reaktoro.PhreeqcDatabase('pitzer.dat')
-            database_file=self.config.reaktoro_options["database_file"],
+        reaktoro_options = ReaktoroOptionsContainer()
+        reaktoro_options.system_state_option(
+            "temperature",
+            self.feed.properties[0].temperature,
         )
+        reaktoro_options.system_state_option(
+            "pressure",
+            self.feed.properties[0].pressure,
+        )
+        reaktoro_options.system_state_option("pH", self.feed.pH)
+        reaktoro_options.aqueous_phase_option(
+            "composition",
+            self.feed.properties[0].flow_mol_phase_comp,
+        )
+        reaktoro_options["build_speciation_block"] = False
+        reaktoro_options["assert_charge_neutrality"] = False
+        reaktoro_options["outputs"] = outputs
+        reaktoro_options.update_with_user_options(self.config.reaktoro_options)
+        reaktoro_options["reaktoro_block_manager"] = (
+            None  # ensure we dont add this to parallel manager!
+        )
+        self.feed.charge_balance_block = ReaktoroBlock(**reaktoro_options)
         self.feed.charge_balance_block.initialize()
 
         self.feed.charge.fix(0)
-
-        assert degrees_of_freedom(self) == 0
+        if self.config.alkalinity_as_CaCO3 is not None:
+            self.feed.alkalinity_as_CaCO3.fix(self.config.alkalinity_as_CaCO3)
+            if isinstance(self.config.alkalinity_balance_ions, str):
+                self.config.alkalinity_balance_ions = [
+                    self.config.alkalinity_balance_ions
+                ]
+            initial_alk_ions = {}
+            for ion in self.config.alkalinity_balance_ions:
+                self.feed.properties[0].conc_mass_phase_comp["Liq", ion].unfix()
+                self.feed.properties[0].conc_mass_phase_comp["Liq", ion].setub(5)
+                initial_alk_ions[ion] = (
+                    self.feed.properties[0].conc_mass_phase_comp["Liq", ion].value
+                )
+        assert degrees_of_freedom(self.feed) == 0
         solver = get_cyipopt_solver()
-        result = solver.solve(self.feed)
-        _log.info(f"Charge balanced, current charge is {self.feed.charge.value}")
+        _log.info("Reconciling feed with reaktoro")
+        result = solver.solve(self.feed, tee=True)
+        assert_optimal_termination(result)
+        _log.info("Reconciliation complete")
         balanced_con = value(
             pyunits.convert(
                 self.feed.properties[0].conc_mass_phase_comp[
@@ -235,9 +278,12 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                 to_units=pyunits.g / pyunits.L,
             )
         )
+        _log.info("Starting alkalinity reconciliation report")
+        _log.info(f"Charge balanced, current charge is {self.feed.charge.value}")
         _log.info(
             f"Increased {self.config.charge_balance_ion} from {initial_con} to {balanced_con} g/L)"
         )
+
         for v in self.feed.charge_balance_block.component_data_objects(Constraint):
             v.deactivate()
         self.feed.charge_balance_block.reaktoro_model.deactivate()
@@ -246,11 +292,22 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         self.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].fix()
+        if self.config.alkalinity_as_CaCO3 is not None:
+            _log.info(
+                f"Reconciled alkalinity for target value of {self.feed.alkalinity_as_CaCO3.value}"
+            )
+            for ion in self.config.alkalinity_balance_ions:
+                self.feed.properties[0].conc_mass_phase_comp["Liq", ion].fix()
+                _log.info(
+                    f"Changed {ion} from {initial_alk_ions[ion]} to {self.feed.properties[0].conc_mass_phase_comp['Liq', ion].value} g/L"
+                )
+
+        _log.info("Report complete")
         assert_optimal_termination(result)
         assert degrees_of_freedom(self) == 0
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.feed.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.feed.pH, 1 / 10)
         self.scale_feed()
 
     def scale_feed(self):
@@ -267,8 +324,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             solver = get_solver()
         result = solver.solve(self.feed, tee=tee)
         assert_optimal_termination(result)
-        if self.config.charge_balance_with_reaktoro:
-            self.balance_charge_with_reaktoro()
+        if self.config.reconcile_using_reaktoro:
+            self.reaktoro_reconciliation()
         if self.feed.find_component("total_mass_flow") != None:
             self.feed.total_mass_flow.deactivate()
             self.feed.properties[0].flow_mass_phase_comp["Liq", "H2O"].fix()
@@ -288,8 +345,13 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                     0
                 ].conc_mass_phase_comp[phase, ion]
         model_state["Composition"]["pH"] = self.feed.pH
+        if self.config.alkalinity_as_CaCO3 is not None:
+            model_state["Composition"]["Alkalinity"] = self.feed.alkalinity_as_CaCO3
         model_state["Physical state"]["Temperature"] = self.feed.properties[
             0
         ].temperature
         model_state["Physical state"]["Pressure"] = self.feed.properties[0].pressure
+        model_state["Physical state"]["Volumetric flowrate"] = self.feed.properties[
+            0
+        ].flow_vol_phase["Liq"]
         return self.name, model_state

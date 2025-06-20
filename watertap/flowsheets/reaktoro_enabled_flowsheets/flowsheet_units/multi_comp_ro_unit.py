@@ -14,6 +14,7 @@ from pyomo.environ import (
     assert_optimal_termination,
 )
 
+from pyomo.environ import log10, log, exp
 from pyomo.environ import (
     Var,
     value,
@@ -21,7 +22,7 @@ from pyomo.environ import (
     units as pyunits,
 )
 from pyomo.common.config import ConfigValue
-
+import math
 from watertap.unit_models.reverse_osmosis_1D import (
     ReverseOsmosis1D,
     ConcentrationPolarizationType,
@@ -159,12 +160,12 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 flowsheet_costing_block=self.config.default_costing_package,
                 **self.config.default_costing_package_kwargs
             )
-        self.ro_feed.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
+        self.ro_feed.pH = Var(initialize=7, bounds=(0, 13), units=pyunits.dimensionless)
         self.ro_retentate.pH = Var(
-            initialize=7, bounds=(1, 12), units=pyunits.dimensionless
+            initialize=7, bounds=(0, 13), units=pyunits.dimensionless
         )
         self.ro_product.pH = Var(
-            initialize=7, bounds=(1, 12), units=pyunits.dimensionless
+            initialize=7, bounds=(0, 13), units=pyunits.dimensionless
         )
 
         self.register_port("feed", self.ro_feed.inlet, {"pH": self.ro_feed.pH})
@@ -294,16 +295,18 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             if "H2O" in ion:
                 return (
                     blk.properties_out[0].flow_mol_phase_comp[liq, ion]
-                    * blk.properties_out[0].mw_comp[ion]
                     == blk.properties_in[0].flow_mass_phase_comp[liq, ion]
+                    / blk.properties_out[0].mw_comp[ion]
                 )
             else:
-                return (
-                    blk.properties_out[0].flow_mol_phase_comp[liq, ion] * sum(tds_in)
-                    == inlet_composition[0.0, liq, ion]
-                    * blk.properties_in[0].flow_mass_phase_comp[
-                        "Liq", self.ro_solute_type
-                    ]
+                return blk.properties_out[0].flow_mol_phase_comp[
+                    liq, ion
+                ] == inlet_composition[0.0, liq, ion] * blk.properties_in[
+                    0
+                ].flow_mass_phase_comp[
+                    "Liq", self.ro_solute_type
+                ] / sum(
+                    tds_in
                 )
 
         translator_block.eq_pressure_equality = Constraint(
@@ -330,13 +333,18 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
         @self.ro_unit.Constraint(length_index)
         def monotone_cp_constraint(fs, d):
+            norm = self.ro_unit.feed_side.properties_interface[
+                0.0, domain[0]
+            ].conc_mass_phase_comp["Liq", self.ro_solute_type]
             return (
                 self.ro_unit.feed_side.properties_interface[
                     0.0, domain[d]
                 ].conc_mass_phase_comp["Liq", self.ro_solute_type]
+                / norm
                 <= self.ro_unit.feed_side.properties_interface[
                     0.0, domain[d + 1]
                 ].conc_mass_phase_comp["Liq", self.ro_solute_type]
+                / norm
             )
 
     def build_scaling_constraints(self):
@@ -382,7 +390,6 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_unit.water_removed_at_interface = Var(
             initialize=1, units=pyunits.mol / pyunits.s
         )
-
         ro_cp_interface = self.ro_unit.feed_side.properties_interface[0, 1]
         self.ro_unit.eq_water_removed_at_interface = Constraint(
             expr=(
@@ -391,15 +398,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             )
             == self.ro_unit.inlet.flow_mass_phase_comp[0, "Liq", "H2O"]
             - self.ro_unit.inlet.flow_mass_phase_comp[0, "Liq", self.ro_solute_type]
-            / ro_cp_interface.mass_frac_phase_comp["Liq", self.ro_solute_type]
+            / ro_cp_interface.flow_mass_phase_comp["Liq", self.ro_solute_type]
+            * ro_cp_interface.flow_mass_phase_comp["Liq", "H2O"]
         )
 
     def add_reaktoro_chemistry(self):
         """add water removal constraint, and relevant reaktoro block"""
 
-        outputs = {("pHDirect", None): self.ro_retentate.pH}
+        outputs = {("pH", None): self.ro_retentate.pH}
         for scalant in self.ro_unit.scaling_tendency:
-            outputs[("scalingTendencyDirect", scalant)] = self.ro_unit.scaling_tendency[
+            outputs[("scalingTendency", scalant)] = self.ro_unit.scaling_tendency[
                 scalant
             ]
 
@@ -423,6 +431,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options["chemistry_modifier"] = {
             "H2O_evaporation": self.ro_unit.water_removed_at_interface
         }
+
+        # self.reaktoro_options["chemistry_modifier_log10_basis"] = True
         self.reaktoro_options.system_state_modifier_option(
             "pressure", ro_cp_interface.pressure
         )
@@ -470,7 +480,6 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
         self.ro_unit.feed_side.K.setlb(1e-6)
         self.ro_unit.feed_side.friction_factor_darcy.setub(200)
-        self.ro_unit.flux_mass_phase_comp.setub(1)
         print("DOFS", degrees_of_freedom(self))
         self.report()
 
@@ -491,12 +500,23 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_unit.recovery_vol_phase[0.0, "Liq"].setlb(0.2)
         self.ro_unit.recovery_vol_phase[0.0, "Liq"].setub(0.95)
         self.activate_scaling_constraints()
+        # set min flux to be greater then 2.5 LMH
+        for phase in self.ro_unit.flux_mass_phase_comp:
+            if "H2O" in phase:
+                self.ro_unit.flux_mass_phase_comp[phase].setlb(
+                    5 * pyunits.kg / (pyunits.m**2 * pyunits.hr)
+                )
+                self.ro_unit.flux_mass_phase_comp[phase].setub(
+                    100 * pyunits.kg / (pyunits.m**2 * pyunits.hr)
+                )
+            else:
+                self.ro_unit.flux_mass_phase_comp[phase].setlb(None)
 
     def scale_before_initialization(self, **kwargs):
         """scales the unit before initialization"""
-        iscale.set_scaling_factor(self.ro_feed.pH, 1 / 1000)
-        iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 1000)
-        iscale.set_scaling_factor(self.ro_product.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.ro_feed.pH, 1 / 10)
+        iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 10)
+        iscale.set_scaling_factor(self.ro_product.pH, 1 / 10)
         # scale monotone cp constraint if it exists
         if self.ro_unit.find_component("monotone_cp_constraint") is not None:
             for eq in self.ro_unit.monotone_cp_constraint:
@@ -538,11 +558,12 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         # scale water removal constraint if it exists
         if self.ro_unit.find_component("eq_water_removed_at_interface") is not None:
             iscale.constraint_scaling_transform(
-                self.ro_unit.eq_water_removed_at_interface, prop_scaling["H2O"]
+                self.ro_unit.eq_water_removed_at_interface, prop_scaling["H2O_mol"] * 10
             )
             iscale.set_scaling_factor(
-                self.ro_unit.water_removed_at_interface, prop_scaling["H2O"]
+                self.ro_unit.water_removed_at_interface, prop_scaling["H2O_mol"] * 10
             )
+
         # scale ph constraints
         if self.ro_retentate.find_component("eq_ph_equality") is not None:
             iscale.constraint_scaling_transform(self.ro_retentate.eq_ph_equality, 1)
@@ -550,14 +571,13 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         # scale scaling constraints if they exist
         if self.config.add_reaktoro_chemistry:
             for scalant, max_tendency in self.config.selected_scalants.items():
+                sf = 1 / max_tendency / 10
+                iscale.set_scaling_factor(self.ro_unit.scaling_tendency[scalant], sf)
                 iscale.set_scaling_factor(
-                    self.ro_unit.scaling_tendency[scalant], 1 / max_tendency
-                )
-                iscale.set_scaling_factor(
-                    self.ro_unit.maximum_scaling_tendency[scalant], 1 / max_tendency
+                    self.ro_unit.maximum_scaling_tendency[scalant], sf
                 )
                 iscale.constraint_scaling_transform(
-                    self.ro_unit.eq_max_scaling_tendency[scalant], 1 / max_tendency
+                    self.ro_unit.eq_max_scaling_tendency[scalant], sf
                 )
 
         # scale RO unit
@@ -578,6 +598,11 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             ]
             / value(self.config.default_property_package.mw_comp["H2O"])
         )
+        scale_factors["H2O_mol"] = (
+            self.config.default_property_package._default_scaling_factors[
+                "flow_mol_phase_comp", ("Liq", "H2O")
+            ]
+        )
         tds_sf = []
         for ion in self.config.default_property_package.solute_set:
             sf = self.config.default_property_package._default_scaling_factors[
@@ -586,19 +611,20 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
             scale_factors[ion] = sf
             tds_sf.append(sf * value(self.config.default_property_package.mw_comp[ion]))
-
+        # scale for ro property package
         tds_sf = sum(tds_sf)
         scale_factors[self.ro_solute_type] = tds_sf
         return scale_factors
 
     def init_translator_block(self, block, additonal_var_to_fix=None):
         """initializes translator block"""
-        block.initialize()
+        # block.initialize()
         if additonal_var_to_fix is not None:
             if not isinstance(additonal_var_to_fix, list):
                 additonal_var_to_fix = [additonal_var_to_fix]
             for var in additonal_var_to_fix:
                 var.fix()
+        block.initialize()
         flags = fix_state_vars(block.properties_in)
         solver = get_solver()
         results = solver.solve(block, tee=False)
@@ -618,10 +644,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             0
         ].flow_mol_phase_comp.fix()  # need to fix for initialization
         self.init_translator_block(
-            self.ro_retentate, self.ro_feed.properties_in[0].flow_mol_phase_comp
+            self.ro_retentate,
+            [self.ro_feed.properties_in[0].flow_mol_phase_comp, self.ro_feed.pH],
         )
         self.init_translator_block(
-            self.ro_product, self.ro_feed.properties_in[0].flow_mol_phase_comp
+            self.ro_product,
+            [
+                self.ro_feed.properties_in[0].flow_mol_phase_comp,
+                self.ro_feed.pH,
+                self.ro_retentate.pH,
+            ],
         )
         self.ro_feed.properties_in[0].flow_mol_phase_comp.unfix()
         if self.config.add_reaktoro_chemistry:
@@ -631,6 +663,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         """Returns a dictionary with the model state"""
         unit_dofs = degrees_of_freedom(self)
         ro_domains = list(self.ro_unit.length_domain)
+
         model_state_dict = {
             "Model": {"DOFs": unit_dofs},
             "RO design": {

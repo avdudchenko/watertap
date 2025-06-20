@@ -10,7 +10,7 @@ from idaes.core.util.model_statistics import degrees_of_freedom
 from pyomo.environ import (
     assert_optimal_termination,
 )
-
+from pyomo.environ import log10, log, exp
 from pyomo.environ import (
     Var,
     Constraint,
@@ -20,6 +20,7 @@ from pyomo.environ import (
     Reals,
     units as pyunits,
 )
+import math
 from pyomo.common.config import ConfigValue
 from idaes.models.unit_models import Mixer
 from idaes.models.unit_models.mixer import MomentumMixingType, MixingType
@@ -118,7 +119,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             all_ports,
             initialize=7,
             units=pyunits.dimensionless,
-            bounds=(1, 12),
+            bounds=(0, 13),
         )
 
         if self.config.add_reaktoro_chemistry:
@@ -128,15 +129,18 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             self.mixer.eq_ph = Constraint(
                 expr=sum(
                     self.mixer.pH[port]
-                    * self.mixer.find_component("port_state").flow_vol_phase["Liq"]
+                    * self.mixer.find_component(f"{port}_state")[0].flow_vol_phase[
+                        "Liq"
+                    ]
                     for port in self.config.inlet_ports
                 )
+                / self.mixer.find_component("mixed_state")[0].flow_vol_phase["Liq"]
                 == self.mixer.pH["outlet"]
-                * self.mixer.find_component("outlet_state").flow_vol_phase["Liq"]
             )
         for port in self.config.inlet_ports:
             self.mixer.find_component(f"{port}_state")[0].flow_mass_phase_comp[...]
             self.mixer.find_component(f"{port}_state")[0].conc_mass_phase_comp[...]
+
             self.register_port(
                 port,
                 self.mixer.find_component(port),
@@ -160,9 +164,8 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
 
     def add_reaktoro_chemistry(self):
         # for tracking all true species in the inlet streams
-        inlet_true_species = []
-
-        for port in self.config.inlet_ports:
+        mixing_blocks = []
+        for port in self.config.inlet_ports[1:]:
             mixer_inlet = self.mixer.find_component(f"{port}_state")[0]
             reaktoro_options = ReaktoroOptionsContainer()
             reaktoro_options.system_state_option(
@@ -179,93 +182,98 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
                 mixer_inlet.flow_mol_phase_comp,
             )
             reaktoro_options["build_speciation_block"] = False
+
             reaktoro_options["outputs"] = {"speciesAmount": True}
-            reaktoro_options.update_with_user_options(self.config.reaktoro_options)
+            reaktoro_options["build_graybox_model"] = False
+            reaktoro_options.update_with_user_options(
+                self.config.reaktoro_options.copy()
+            )
+
             self.add_component(
                 f"{port}_speciation_block", ReaktoroBlock(**reaktoro_options)
             )
-            inlet_true_species.append(
-                self.find_component(f"{port}_speciation_block").outputs
-            )
-
-        self.outlet_true_mixed_species = Var(
-            list(inlet_true_species[0].keys()), initialize=1, bounds=(0, None)
-        )
-
-        @self.Constraint(list(inlet_true_species[0].keys()))
-        def eq_mixed_speciation(fs, key, prop):
-            ions = [o[key, prop] for o in inlet_true_species]
-            return sum(ions) == self.outlet_true_mixed_species[key, prop]
-
-        for ion, obj in self.outlet_true_mixed_species.items():
-            if "H2O" in ion:
-                obj.value = obj.value * 10
-            else:
-                obj.value = obj.value / 1000
-        mixed_state = self.mixer.find_component(f"mixed_state")[0]
-
+            mixing_blocks.append(self.find_component(f"{port}_speciation_block"))
+        feed_port = self.config.inlet_ports[0]
         reaktoro_options = ReaktoroOptionsContainer()
         reaktoro_options.system_state_option(
             "temperature",
-            mixed_state.temperature,
+            feed_port.temperature,
         )
         reaktoro_options.system_state_option(
             "pressure",
-            mixed_state.pressure,
+            feed_port.pressure,
         )
         reaktoro_options.aqueous_phase_option(
             "composition",
-            self.outlet_true_mixed_species,
+            feed_port.flow_mol_phase_comp,
         )
+        reaktoro_options.system_state_option(
+            "pH", self.mixer.pH[self.config.inlet_ports[0]]
+        )
+        self.outlet_true_mixed_species.display()
+        reaktoro_options.aqueous_phase_option("composition_is_elements", False)
         reaktoro_options["aqueous_phase"]["convert_to_rkt_species"] = False
-        reaktoro_options["exact_speciation"] = True
-        reaktoro_options["build_speciation_block"] = False
+        reaktoro_options["aqueous_phase"]["composition_log10_basis"] = True
+        reaktoro_options["build_speciation_block"] = True
         reaktoro_options["outputs"] = {("pH", None): self.mixer.pH["outlet"]}
+        reaktoro_options["external_speciation_reaktoro_blocks"] = mixing_blocks
         reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.mixer_speciation_block = ReaktoroBlock(**reaktoro_options)
 
     def scale_before_initialization(self, **kwargs):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
-        iscale.set_scaling_factor(self.mixer.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.mixer.pH, 1 / 10)
+        if self.config.add_reaktoro_chemistry == False:
+            iscale.constraint_scaling_transform(self.mixer.eq_ph, 1 / 10)
 
     def initialize_streams(self, **kwargs):
-        if self.config.guess_secondary_inlet_composition:
+        self.fixed_streams = []
+        if (
+            self.config.guess_secondary_inlet_composition
+            and self.mixer_initialized == False
+        ):
             stream_init = {}
-            for inlet in self.config.inlet_ports:
+            for i, inlet in enumerate(self.config.inlet_ports):
                 inlet_var = self.mixer.find_component(f"{inlet}_state")[0]
-                if self.mixer_initialized == False:
+
+                if i > 0:
                     stream_init[inlet] = True
-                    ref_stream = inlet_var
                 else:
                     stream_init[inlet] = False
+                    ref_stream = inlet_var
             for inlet, init_state in stream_init.items():
-                if init_state == False:
+                if init_state:
                     inlet_var = self.mixer.find_component(f"{inlet}_state")[0]
                     for idx, obj in inlet_var.flow_mol_phase_comp.items():
-                        obj.value = ref_stream.flow_mol_phase_comp[idx].value * 1
+                        obj.fix(ref_stream.flow_mol_phase_comp[idx].value * 1)
+                        self.fixed_streams.append(obj)
+            # assert False
             self.mixer_initialized = True
 
     def initialize_unit(self, **kwargs):
         self.initialize_streams()
         self.mixer.initialize()
+        for obj in self.fixed_streams:
+            obj.unfix()
+        self.fixed_streams = []
         calculate_variable_from_constraint(
             self.mixer.mixed_state[0].temperature,
             self.mixer.temp_constraint,
         )
         if self.config.add_reaktoro_chemistry:
             # get initial mole flows
-            for port in self.config.inlet_ports:
-                self.find_component(f"{port}_speciation_block").initialize()
-            for ion, obj in self.outlet_true_mixed_species.items():
-                calculate_variable_from_constraint(obj, self.eq_mixed_speciation[ion])
-                val = obj.value
-                if val <= 0:
-                    val = 1e-32
-                    obj.set_value(1e-32)
-                iscale.set_scaling_factor(obj, 1 / val)
-                iscale.constraint_scaling_transform(
-                    self.eq_mixed_speciation[ion], 1 / val
-                )
+            # for port in self.config.inlet_ports:
+            #     self.find_component(f"{port}_speciation_block").initialize()
+            # for ion, obj in self.outlet_true_mixed_species.items():
+            #     calculate_variable_from_constraint(obj, self.eq_mixed_speciation[ion])
+            #     val = obj.value
+            #     # if val <= 0:
+            #     #     val = 1e-32
+            #     #     obj.set_value(1e-32)
+            #     iscale.set_scaling_factor(obj, 1 / val)
+            #     iscale.constraint_scaling_transform(
+            #         self.eq_mixed_speciation[ion], 1 / val
+            #     )
             self.mixer_speciation_block.initialize()
 
     def get_model_state_dict(self):

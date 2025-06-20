@@ -19,7 +19,6 @@ from idaes.core.util.model_statistics import degrees_of_freedom
 import idaes.core.util.scaling as iscale
 from pyomo.environ import (
     TransformationFactory,
-    units as pyunits,
 )
 
 from watertap.costing import WaterTAPCosting

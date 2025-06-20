@@ -27,7 +27,7 @@ solute_list:
     stokes_radius (m): 0.347e-9
     elemental charge: 2
   Cl_-:
-    concentration (mg/L): 18980.0
+    concentration (mg/L): 15980.0
     diffusivity: 2.03e-9
     molecular_weight (kg/mol): 35.453e-3
     stokes_radius (m): 0.121e-9

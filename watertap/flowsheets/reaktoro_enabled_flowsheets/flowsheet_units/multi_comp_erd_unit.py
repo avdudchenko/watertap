@@ -60,7 +60,7 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
             )
         # Add ERD flow rate
         self.ERD.control_volume.properties_in[0].flow_vol_phase[...]
-        self.ERD.pH = Var(initialize=7, bounds=(1, 12), units=pyunits.dimensionless)
+        self.ERD.pH = Var(initialize=7, bounds=(0, 13), units=pyunits.dimensionless)
 
         self.register_port("inlet", self.ERD.inlet, {"pH": self.ERD.pH})
         self.register_port("outlet", self.ERD.outlet, {"pH": self.ERD.pH})
@@ -78,7 +78,7 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ERD.inlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.control_volume.work, 1e-4)
-        iscale.set_scaling_factor(self.ERD.pH, 1 / 1000)
+        iscale.set_scaling_factor(self.ERD.pH, 1 / 10)
 
     def initialize_unit(self):
         self.ERD.initialize()

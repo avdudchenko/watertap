@@ -47,8 +47,8 @@ from idaes.core import (
 )
 import idaes.core.util.scaling as iscale
 
-from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (
-    get_cyipopt_solver,
+from reaktoro_pse.core.util_classes.cyipopt_solver import (
+    get_cyipopt_watertap_solver,
 )
 from pyomo.environ import (
     assert_optimal_termination,
@@ -62,7 +62,7 @@ import numpy as np
 from watertap.core.util.model_diagnostics.infeasible import *
 
 
-def test_softeining():
+def test_softening():
     m = build_lime_only("../water_sources/USDA_brackish.yaml")
     solver = get_cyipopt_solver()
     # initialize(m)'
@@ -122,23 +122,7 @@ def main():
 def main_ro_model():
     m = build_model("../water_sources/USDA_brackish.yaml", hpro=False)
     initialize(m)
-
-    # m.fs.water_recovery.fix(73 / 100)
-
-    # solve_model(m)
-    # for c in range(190, 220, 1):
-    #     m.fs.softening_unit.precipitation_reactor.reagent_dose["CaO"].fix(c / 1000)
-    #     print(f"\n\n------------Solving for CaO dose: {c} ppm------------")
-    #     solve_model(m)
-    #     process_reaktoro_blocks(m)
-    #     print("------vars_close_to_bound-tests---------")
-    #     print_variables_close_to_bounds(m)
-    #     print("------constraints_close_to_bound-tests---------")
-
-    #     print_constraints_close_to_bounds(m)
-
-    for r in np.linspace(73, 90, 18):
-        process_reaktoro_blocks(m)
+    for r in range(65, 87, 1):
         m.fs.water_recovery.fix(r / 100)
         print(f"\n\n------------Solving for water recovery: {r}%------------")
         solve_model(m)
@@ -215,9 +199,18 @@ def enable_multi_process_reaktoro(m):
     )
 
     rkt_options = {}
-    m.reaktoro_manager = ReaktoroBlockManager()
+    m.reaktoro_manager = ReaktoroBlockManager(
+        hessian_type="BFGS_ipopt"
+        # hessian_type="ZeroHessian",  # "ZeroHessian"
+    )  # "GaussNewton")
     rkt_options["reaktoro_block_manager"] = m.reaktoro_manager
+    # rkt_options["reaktoro_solve_options"] = {
+    #     "solver_tolerance": 1e-8,
+    #     # "epsilon": 1e-128,
+    # }
 
+    # rkt_options["enable_solvent_relaxation_on_property_block"] = True
+    # rkt_options["enable_pH_relaxation_on_property_block"] = False
     return rkt_options
 
 
@@ -237,14 +230,15 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
     m.fs.ro_properties = SeawaterParameterBlock()
     m.fs.feed = MultiCompFeed(
         default_property_package=m.fs.properties,
-        charge_balance_with_reaktoro=True,
+        reconcile_using_reaktoro=True,
         **feed_specs,
     )
     m.fs.softening_unit = PrecipitationUnit(
         default_property_package=m.fs.properties,
         default_costing_package=m.fs.costing,
         selected_precipitants=["Calcite"],
-        selected_reagents=["CaO", "Na2CO3"],
+        selected_reagents=["Na2CO3", "CaO"],
+        add_alkalinity=True,
         reaktoro_options=rkt_options,
     )
 
@@ -254,11 +248,15 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
         selected_reagents=["HCl"],
         reaktoro_options=rkt_options,
     )
-
+    if "Seawater" in water_case:
+        ovp = 1.5
+    else:
+        ovp = 5.25
     m.fs.pump_unit = MultiCompPumpUnit(
         default_property_package=m.fs.properties,
         default_costing_package=m.fs.costing,
         initialization_pressure="osmotic_pressure",
+        osmotic_over_pressure=ovp,
         maximum_pressure=85 * pyunits.bar,
     )
 
@@ -280,7 +278,7 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
             default_property_package=m.fs.properties,
             default_costing_package=m.fs.costing,
             initialization_pressure="osmotic_pressure",
-            maximum_pressure=300 * pyunits.bar,
+            maximum_pressure=400 * pyunits.bar,
         )
         m.fs.hpro_unit = MultiCompROUnit(
             default_property_package=m.fs.properties,
@@ -289,13 +287,13 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
             selected_scalants={"Calcite": 1, "Gypsum": 1},
             reaktoro_options=rkt_options,
             default_costing_package_kwargs={
-                "costing_method_arguments": {"RO_type": "high_pressure"}
+                "costing_method_arguments": {"ro_type": "high_pressure"}
             },
         )
         m.fs.product_mixer = MixerPhUnit(
             default_property_package=m.fs.properties,
             default_costing_package=m.fs.costing,
-            inlet_ports=["ro", "hpro"],
+            inlet_ports=["ro_inlet", "hpro_inlet"],
             add_reaktoro_chemistry=False,
         )
 
@@ -342,8 +340,8 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
         m.fs.hp_pump_unit.outlet.connect_to(m.fs.hpro_unit.feed)
         m.fs.hpro_unit.retentate.connect_to(m.fs.erd_unit.inlet)
 
-        m.fs.ro_unit.product.connect_to(m.fs.product_mixer.inlet["ro"])
-        m.fs.hpro_unit.product.connect_to(m.fs.product_mixer.inlet["hpro"])
+        m.fs.ro_unit.product.connect_to(m.fs.product_mixer.ro_inlet)
+        m.fs.hpro_unit.product.connect_to(m.fs.product_mixer.hpro_inlet)
         m.fs.product_mixer.outlet.connect_to(m.fs.product.inlet)
     else:
         m.fs.ro_unit.retentate.connect_to(m.fs.erd_unit.inlet)
@@ -358,7 +356,7 @@ def build_model(water_case, multi_process_reaktoro=True, hpro=False):
     m.fs.costing.add_specific_energy_consumption(
         m.fs.product.product.properties[0].flow_vol
     )
-    m.fs.lcow_objective = Objective(expr=(10 * m.fs.costing.LCOW) ** 2)
+    m.fs.lcow_objective = Objective(expr=(m.fs.costing.LCOW))
     TransformationFactory("network.expand_arcs").apply_to(m)
     add_global_constraints(m)
     fix_and_scale(m)
@@ -396,6 +394,9 @@ def fix_and_scale(m):
         unit.fix_and_scale()
 
     iscale.calculate_scaling_factors(m)
+    m.fs.softening_unit.precipitation_reactor.alkalinity.setlb(5)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(12)
+    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(6)
     assert degrees_of_freedom(m) == 0
 
 
@@ -405,10 +406,14 @@ def initialize(m):
     m.fs.costing.initialize()
     report_all_units(m)
 
-    solve_model(m)
+    solve_model(m, limited_memory=False)
     set_optimization(m)
-    m.fs.water_recovery.fix(0.5)
-    solve_model(m)
+
+    if m.fs.water_recovery.value < 0.5:
+        m.fs.water_recovery.fix(0.5)
+    else:
+        m.fs.water_recovery.fix()
+    solve_model(m, limited_memory=False)
     print("--------------Initialization complete--------")
 
 
@@ -431,11 +436,20 @@ def process_reaktoro_blocks(m):
         block.update_jacobian_scaling()
 
 
-def solve_model(m, solver=None):
+def solve_model(m, solver=None, limited_memory=False):
     if solver is None:
-        solver = get_cyipopt_solver(max_iters=100)
+        solver = get_cyipopt_watertap_solver(
+            ma27=True, max_iter=3500, limited_memory=limited_memory
+        )
     result = solver.solve(m, tee=True)
     report_all_units(m)
+    # print(result.solver.termination_condition)
+    # if result.solver.termination_condition != "optimal":
+    #     solver = get_cyipopt_watertap_solver(
+    #         ma27=True, max_iter=500, limited_memory=True
+    #     )
+    #     result = solver.solve(m, tee=True)
+    #     report_all_units(m)
     assert_optimal_termination(result)
     return result
 

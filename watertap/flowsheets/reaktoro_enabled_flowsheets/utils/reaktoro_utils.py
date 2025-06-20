@@ -261,7 +261,7 @@ class ReaktoroOptionsContainer(dict):
         self["reaktoro_block_manager"] = None
         self["build_speciation_block"] = True
         self["assert_charge_neutrality"] = True
-        self["dissolve_species_in_reaktoro"] = True
+        # self["dissolve_species_in_reaktoro"] = True
 
     def system_state_option(self, option, value):
         self["system_state"][option] = value
@@ -272,8 +272,34 @@ class ReaktoroOptionsContainer(dict):
     def aqueous_phase_option(self, option, value):
         self["aqueous_phase"][option] = value
 
+        ## ensure that when we provide composition it is not
+        ## super saturated!
+        if option == "composition":
+            ## we assume that values for composition wer enot initalized
+            # on build, and thus need to be adjusted to remove
+            # saturation, this will occur when all values are the same
+
+            len_unique = len(set([obj.value for v, obj in value.items()]))
+            if len_unique == 1:
+                for v, obj in value.items():
+                    if "H2O" in v:
+                        obj.value = obj.value * 10
+                    else:
+                        obj.value = obj.value * 0.001
+
+        self["aqueous_phase"][option] = value
+
     def update_with_user_options(self, options):
         if options is None:
             pass
         else:
-            self.update(options)
+            for key, item in options.items():
+                print(key, item)
+                if isinstance(item, dict):
+                    if key in self:
+                        self[key].update(item)
+                    else:
+                        self[key] = item
+                else:
+                    self[key] = item
+        print(self)

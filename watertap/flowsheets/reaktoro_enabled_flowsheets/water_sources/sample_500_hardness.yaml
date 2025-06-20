@@ -1,0 +1,49 @@
+actual_hardness: 499.9310994119639
+flow_mass: 1
+pH: 7.2
+solute_list:
+  Ca_2+:
+    concetration (mg/kg): 167.40000000000003
+    diffusivity: 7.53e-10
+    elemental charge: 2
+    molecular_weight (kg/mol): 0.040078
+    stokes_radius (m): 3.09e-10
+  Cl_-:
+    concetration (mg/kg): 368.0
+    diffusivity: 2.03e-09
+    elemental charge: -1
+    molecular_weight (kg/mol): 0.035453
+    stokes_radius (m): 1.21e-10
+  HCO3_-:
+    concetration (mg/kg): 74.03
+    diffusivity: 1.18e-09
+    elemental charge: -1
+    molecular_weight (kg/mol): 0.0610168
+    stokes_radius (m): 2.06e-10
+  K_+:
+    concetration (mg/kg): 5.5
+    diffusivity: 1.957e-09
+    elemental charge: 1
+    molecular_weight (kg/mol): 0.0390983
+    stokes_radius (m): 1.25e-10
+  Mg_2+:
+    concetration (mg/kg): 19.920000000000005
+    diffusivity: 7.05e-10
+    elemental charge: 2
+    molecular_weight (kg/mol): 0.024305
+    stokes_radius (m): 3.47e-10
+  Na_+:
+    concetration (mg/kg): 607.9425220718016
+    diffusivity: 1.33e-09
+    elemental charge: 1
+    molecular_weight (kg/mol): 0.022989769
+    stokes_radius (m): 1.84e-10
+  SO4_2-:
+    concetration (mg/kg): 1200.0
+    diffusivity: 1.07e-09
+    elemental charge: -2
+    molecular_weight (kg/mol): 0.09606
+    stokes_radius (m): 2.3e-10
+solvent_list:
+  H2O:
+    molecular_weight (kg/mol): 0.01801528

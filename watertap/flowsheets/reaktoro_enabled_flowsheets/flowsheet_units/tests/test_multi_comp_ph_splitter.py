@@ -2,8 +2,8 @@ import pytest
 from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_feed_unit import (
     MultiCompFeed,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_ph_mixer_unit import (
-    MixerPhUnit,
+from watertap.flowsheets.reaktoro_enabled_flowsheets.flowsheet_units.multi_comp_ph_splitter import (
+    SplitterPhUnit,
 )
 from watertap.flowsheets.reaktoro_enabled_flowsheets.water_sources.source_water_importer import (
     get_source_water_data,
@@ -37,13 +37,11 @@ __author__ = "Alexander Dudchenko"
 
 
 @pytest.mark.component
-def test_mixing_sea_brackish_water():
+def test_splitter():
     mcas_props, USDA_feed_specs = get_source_water_data(
         f"../../water_sources/USDA_brackish.yaml"
     )
-    _, sea_water_feed_specs = get_source_water_data(
-        f"../../water_sources/Seawater.yaml"
-    )
+
     m = ConcreteModel()
     m.fs = FlowsheetBlock()
 
@@ -51,80 +49,77 @@ def test_mixing_sea_brackish_water():
     mcas_props["density_calculation"] = DensityCalculation.constant
 
     m.fs.properties = MCASParameterBlock(**mcas_props)
-    m.fs.usda_feed = MultiCompFeed(
+    m.fs.feed = MultiCompFeed(
         default_property_package=m.fs.properties,
         charge_balance_with_reaktoro=True,
         **USDA_feed_specs,
     )
-    m.fs.sea_water_feed = MultiCompFeed(
-        default_property_package=m.fs.properties,
-        charge_balance_with_reaktoro=True,
-        **sea_water_feed_specs,
-    )
-    m.fs.usda_feed.fix_and_scale()
-    m.fs.sea_water_feed.set_fixed_operation()
+    m.fs.feed.fix_and_scale()
 
-    m.fs.mixer = MixerPhUnit(
+    m.fs.splitter = SplitterPhUnit(
         default_property_package=m.fs.properties,
-        inlet_ports=["usda_feed", "sea_water_feed"],
+        outlet_ports=["feed_a", "feed_b"],
+        splitter_initialization_guess=0.4,
     )
-    m.fs.mixer.fix_and_scale()
-    m.fs.usda_feed.outlet.connect_to(m.fs.mixer.usda_feed)
-    m.fs.sea_water_feed.outlet.connect_to(m.fs.mixer.sea_water_feed)
+    m.fs.splitter.fix_and_scale()
+    m.fs.feed.outlet.connect_to(m.fs.splitter.inlet)
     TransformationFactory("network.expand_arcs").apply_to(m)
     assert degrees_of_freedom(m) == 0
     iscale.calculate_scaling_factors(m)
 
-    m.fs.usda_feed.initialize()
+    m.fs.feed.initialize()
 
-    m.fs.sea_water_feed.initialize()
-    m.fs.mixer.initialize()
-    m.fs.mixer.report()
+    m.fs.splitter.initialize()
+    m.fs.splitter.report()
     assert degrees_of_freedom(m) == 0
     solver = get_cyipopt_solver(10)
     result = solver.solve(m, tee=True)
     assert_optimal_termination(result)
-    m.fs.mixer.report()
+    m.fs.splitter.report()
     assert degrees_of_freedom(m) == 0
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.pH["outlet"].value,
+            m.fs.splitter.splitter.pH.value,
             1e-5,
         )
-        == 7.1033
+        == 7.07
     )
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].pressure.value,
+            m.fs.splitter.splitter.pH.value,
             1e-5,
         )
-        == 101325
+        == 7.07
     )
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].temperature.value,
+            m.fs.splitter.splitter.feed_a_state[0]
+            .flow_mass_phase_comp["Liq", "H2O"]
+            .value,
             1e-5,
         )
-        == 293.15
+        == 0.39863
     )
-
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].flow_mass_phase_comp["Liq", "H2O"].value,
+            m.fs.splitter.splitter.feed_b_state[0]
+            .flow_mass_phase_comp["Liq", "H2O"]
+            .value,
             1e-5,
         )
-        == 1.9622
+        == 0.59795
     )
+    m.fs.splitter.set_optimization_operation()
+    for port in m.fs.splitter.config.outlet_ports:
+        assert m.fs.splitter.splitter.split_fraction[0, port].fixed == False
 
 
 @pytest.mark.component
-def test_mixing_sea_brackish_water_no_rkt():
+def test_splitter_3_ports():
     mcas_props, USDA_feed_specs = get_source_water_data(
         f"../../water_sources/USDA_brackish.yaml"
     )
-    _, sea_water_feed_specs = get_source_water_data(
-        f"../../water_sources/Seawater.yaml"
-    )
+
     m = ConcreteModel()
     m.fs = FlowsheetBlock()
 
@@ -132,68 +127,75 @@ def test_mixing_sea_brackish_water_no_rkt():
     mcas_props["density_calculation"] = DensityCalculation.constant
 
     m.fs.properties = MCASParameterBlock(**mcas_props)
-    m.fs.usda_feed = MultiCompFeed(
+    m.fs.feed = MultiCompFeed(
         default_property_package=m.fs.properties,
         charge_balance_with_reaktoro=True,
         **USDA_feed_specs,
     )
-    m.fs.sea_water_feed = MultiCompFeed(
-        default_property_package=m.fs.properties,
-        charge_balance_with_reaktoro=True,
-        **sea_water_feed_specs,
-    )
-    m.fs.usda_feed.fix_and_scale()
-    m.fs.sea_water_feed.set_fixed_operation()
+    m.fs.feed.fix_and_scale()
 
-    m.fs.mixer = MixerPhUnit(
+    m.fs.splitter = SplitterPhUnit(
         default_property_package=m.fs.properties,
-        inlet_ports=["usda_feed", "sea_water_feed"],
-        add_reaktoro_chemistry=False,
+        outlet_ports=["feed_a", "feed_b", "port_c"],
+        splitter_initialization_guess={"feed_a": 0.4, "feed_b": 0.4},
     )
-    m.fs.mixer.fix_and_scale()
-    m.fs.usda_feed.outlet.connect_to(m.fs.mixer.usda_feed)
-    m.fs.sea_water_feed.outlet.connect_to(m.fs.mixer.sea_water_feed)
+    m.fs.splitter.fix_and_scale()
+    m.fs.feed.outlet.connect_to(m.fs.splitter.inlet)
     TransformationFactory("network.expand_arcs").apply_to(m)
     assert degrees_of_freedom(m) == 0
     iscale.calculate_scaling_factors(m)
 
-    m.fs.usda_feed.initialize()
+    m.fs.feed.initialize()
 
-    m.fs.sea_water_feed.initialize()
-    m.fs.mixer.initialize()
-    m.fs.mixer.report()
+    m.fs.splitter.initialize()
+    m.fs.splitter.report()
     assert degrees_of_freedom(m) == 0
     solver = get_cyipopt_solver(10)
     result = solver.solve(m, tee=True)
     assert_optimal_termination(result)
-    m.fs.mixer.report()
+    m.fs.splitter.report()
     assert degrees_of_freedom(m) == 0
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.pH["outlet"].value,
-            1e-5,
+            m.fs.splitter.splitter.pH.value,
+            1e-3,
         )
-        == 7.1033
+        == 7.07
     )
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].pressure.value,
-            1e-5,
+            m.fs.splitter.splitter.pH.value,
+            1e-3,
         )
-        == 101325
+        == 7.07
     )
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].temperature.value,
-            1e-5,
+            m.fs.splitter.splitter.feed_a_state[0]
+            .flow_mass_phase_comp["Liq", "H2O"]
+            .value,
+            1e-3,
         )
-        == 293.15
+        == 0.39863
     )
-
     assert (
         pytest.approx(
-            m.fs.mixer.mixer.mixed_state[0].flow_mass_phase_comp["Liq", "H2O"].value,
-            1e-5,
+            m.fs.splitter.splitter.feed_b_state[0]
+            .flow_mass_phase_comp["Liq", "H2O"]
+            .value,
+            1e-3,
         )
-        == 1.9622
+        == 0.39863
     )
+    assert (
+        pytest.approx(
+            m.fs.splitter.splitter.port_c_state[0]
+            .flow_mass_phase_comp["Liq", "H2O"]
+            .value,
+            1e-3,
+        )
+        == 0.19932
+    )
+    m.fs.splitter.set_optimization_operation()
+    for port in m.fs.splitter.config.outlet_ports:
+        assert m.fs.splitter.splitter.split_fraction[0, port].fixed == False

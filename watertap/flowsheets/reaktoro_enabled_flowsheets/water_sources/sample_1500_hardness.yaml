@@ -3,43 +3,43 @@ flow_mass: 1
 pH: 7.2
 solute_list:
   Ca_2+:
-    concetration (mg/kg): 490.0
+    concentration (mg/L): 490.0
     diffusivity: 7.53e-10
     elemental charge: 2
     molecular_weight (kg/mol): 0.040078
     stokes_radius (m): 3.09e-10
   Cl_-:
-    concetration (mg/kg): 71.00000000000001
+    concentration (mg/L): 71.00000000000001
     diffusivity: 2.03e-09
     elemental charge: -1
     molecular_weight (kg/mol): 0.035453
     stokes_radius (m): 1.21e-10
   HCO3_-:
-    concetration (mg/kg): 120.0
+    concentration (mg/L): 120.0
     diffusivity: 1.18e-09
     elemental charge: -1
     molecular_weight (kg/mol): 0.0610168
     stokes_radius (m): 2.06e-10
   K_+:
-    concetration (mg/kg): 16.0
+    concentration (mg/L): 16.0
     diffusivity: 1.957e-09
     elemental charge: 1
     molecular_weight (kg/mol): 0.0390983
     stokes_radius (m): 1.25e-10
   Mg_2+:
-    concetration (mg/kg): 67.0
+    concentration (mg/L): 67.0
     diffusivity: 7.05e-10
     elemental charge: 2
     molecular_weight (kg/mol): 0.024305
     stokes_radius (m): 3.47e-10
   Na_+:
-    concetration (mg/kg): 206.65632417592215
+    concentration (mg/L): 206.65632417592215
     diffusivity: 1.33e-09
     elemental charge: 1
     molecular_weight (kg/mol): 0.022989769
     stokes_radius (m): 1.84e-10
   SO4_2-:
-    concetration (mg/kg): 1700.0
+    concentration (mg/L): 1700.0
     diffusivity: 1.07e-09
     elemental charge: -2
     molecular_weight (kg/mol): 0.09606

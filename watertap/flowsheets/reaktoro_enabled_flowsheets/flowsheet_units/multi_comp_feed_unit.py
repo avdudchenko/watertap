@@ -17,8 +17,8 @@ from watertap.core.solvers import get_solver
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (
-    get_cyipopt_solver,
+from reaktoro_pse.core.util_classes.cyipopt_solver import (
+    get_cyipopt_watertap_solver,
 )
 from pyomo.environ import (
     assert_optimal_termination,
@@ -265,7 +265,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                     self.feed.properties[0].conc_mass_phase_comp["Liq", ion].value
                 )
         assert degrees_of_freedom(self.feed) == 0
-        solver = get_cyipopt_solver()
+        solver = get_cyipopt_watertap_solver()
         _log.info("Reconciling feed with reaktoro")
         result = solver.solve(self.feed, tee=True)
         assert_optimal_termination(result)

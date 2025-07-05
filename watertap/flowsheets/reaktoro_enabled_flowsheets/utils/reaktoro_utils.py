@@ -169,7 +169,6 @@ class ViableReagentsBase(dict):
                 sf = iscale.get_scaling_factor(var)
                 sfs.append(sf)
             sff = max(sfs)  # lets grab maximum scaling factor
-            print(solvent, sff, sfs)
             iscale.set_scaling_factor(
                 block.find_component("flow_mol_solvent")[solvent], sff
             )
@@ -234,7 +233,7 @@ class ViablePrecipitantsBase(dict):
             reagent - name of reagent
             mw - molecular weight of reagent (include pyomo units)
             precipitation_stoichiometric - dictionary that contains what species form the solid {'ion':moles}
-            primary_ion - a primary ion that defines formation of this precipitants
+            primary_ion - a primary ion that forms the solid, will be used to "scale" the ion (e.g. CaSO4 will have primary ion Ca_2+)
 
         """
 

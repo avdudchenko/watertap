@@ -1914,7 +1914,7 @@ class ADM1ReactionBlockData(ReactionBlockDataBase):
         iscale.set_scaling_factor(self.pKW, 1e0)
         iscale.set_scaling_factor(self.pK_a_co2, 1e0)
         iscale.set_scaling_factor(self.pK_a_IN, 1e0)
-        iscale.set_scaling_factor(self.pH, 1e0)
+        iscale.set_scaling_factor(self.pH, 1 / 10e0)
 
         for i, c in self.rates.items():
             iscale.set_scaling_factor(self.reaction_rate[i], 1 / c)

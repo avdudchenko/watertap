@@ -5,19 +5,10 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import (
     ReaktoroOptionsContainer,
 )
-from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
-from pyomo.environ import (
-    assert_optimal_termination,
-)
-from pyomo.environ import log10, log, exp
 from pyomo.environ import (
     Var,
     Constraint,
-    value,
-    Param,
-    Expression,
-    Reals,
     units as pyunits,
 )
 import math
@@ -27,13 +18,7 @@ from idaes.models.unit_models.mixer import MomentumMixingType, MixingType
 from idaes.core import (
     declare_process_block_class,
 )
-from idaes.core import UnitModelCostingBlock
-
 import idaes.core.util.scaling as iscale
-
-from watertap.unit_models.stoichiometric_reactor import (
-    StoichiometricReactor,
-)
 from reaktoro_pse.reaktoro_block import ReaktoroBlock
 from collections import OrderedDict
 
@@ -126,7 +111,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             self.add_reaktoro_chemistry()
         else:
             # flow average pH of all inlets
-            self.mixer.eq_ph = Constraint(
+            self.mixer.eq_pH = Constraint(
                 expr=sum(
                     self.mixer.pH[port]
                     * self.mixer.find_component(f"{port}_state")[0].flow_vol_phase[
@@ -224,7 +209,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
         iscale.set_scaling_factor(self.mixer.pH, 1 / 10)
         if self.config.add_reaktoro_chemistry == False:
-            iscale.constraint_scaling_transform(self.mixer.eq_ph, 1 / 10)
+            iscale.constraint_scaling_transform(self.mixer.eq_pH, 1 / 10)
 
     def initialize_streams(self, **kwargs):
         self.fixed_streams = []

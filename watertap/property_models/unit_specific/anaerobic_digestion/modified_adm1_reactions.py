@@ -2738,7 +2738,7 @@ class ModifiedADM1ReactionBlockData(ReactionBlockDataBase):
         iscale.set_scaling_factor(self.pKW, 1e0)
         iscale.set_scaling_factor(self.pK_a_co2, 1e0)
         iscale.set_scaling_factor(self.pK_a_IN, 1e0)
-        iscale.set_scaling_factor(self.pH, 1e0)
+        iscale.set_scaling_factor(self.pH, 1 / 10e0)
 
         for i, c in self.rate_expression.items():
             iscale.constraint_scaling_transform(

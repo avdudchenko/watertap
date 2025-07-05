@@ -6,25 +6,17 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.reaktoro_utils import
     ViableReagents,
     ReaktoroOptionsContainer,
 )
-from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
-from pyomo.environ import (
-    assert_optimal_termination,
-)
 
 from pyomo.environ import (
     Var,
     Constraint,
     value,
     Param,
-    Expression,
     Reals,
     units as pyunits,
 )
-import math
-from pyomo.environ import log10, log, exp
 from pyomo.common.config import ConfigValue
-from watertap.unit_models.pressure_changer import Pump
 from idaes.core import (
     declare_process_block_class,
 )
@@ -216,10 +208,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 self.chemical_reactor.reagent_dose[reagent].unfix()
 
     def scale_before_initialization(self, **kwargs):
-        max_dose = []
+        dose_scale = 1 / 0.001  # step size of ppm (or 0.001 kg/m3)
         for reagent, options in self.selected_reagents.items():
-            dose_scale = options["max_dose"]  # / 100  # * 1e-3
-            max_dose.append(dose_scale)
             # use mol flow, as thats what will be propagated by default via mcas
             mass_flow_scale = dose_scale / (
                 self.config.default_property_package._default_scaling_factors[

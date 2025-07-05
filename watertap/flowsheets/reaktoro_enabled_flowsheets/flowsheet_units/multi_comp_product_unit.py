@@ -2,34 +2,19 @@ from idaes.core import (
     declare_process_block_class,
 )
 
-from pyomo.common.config import ConfigValue
 from idaes.models.unit_models import (
     Product,
 )
 
 from pyomo.environ import (
     Var,
-    value,
-    Constraint,
     units as pyunits,
 )
-from watertap.core.solvers import get_solver
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
 )
-from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.cyipot_solver import (
-    get_cyipopt_solver,
-)
-from pyomo.environ import (
-    assert_optimal_termination,
-)
-from idaes.core.util.model_statistics import degrees_of_freedom
-from watertap.core.util.initialization import interval_initializer
-import idaes.core.util.scaling as iscale
-from reaktoro_pse.reaktoro_block import ReaktoroBlock
-import idaes.logger as idaeslog
 
-_log = idaeslog.getLogger(__name__)
+import idaes.core.util.scaling as iscale
 
 __author__ = "Alexander Dudchenko"
 

@@ -4,9 +4,6 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
     WaterTapFlowsheetBlockData,
 )
 from idaes.core.util.model_statistics import degrees_of_freedom
-from pyomo.environ import (
-    assert_optimal_termination,
-)
 
 from pyomo.environ import (
     Var,

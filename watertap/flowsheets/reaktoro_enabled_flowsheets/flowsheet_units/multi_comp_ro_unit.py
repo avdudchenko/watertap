@@ -13,8 +13,6 @@ from idaes.core.util.model_statistics import degrees_of_freedom
 from pyomo.environ import (
     assert_optimal_termination,
 )
-
-from pyomo.environ import log10, log, exp
 from pyomo.environ import (
     Var,
     value,
@@ -22,7 +20,6 @@ from pyomo.environ import (
     units as pyunits,
 )
 from pyomo.common.config import ConfigValue
-import math
 from watertap.unit_models.reverse_osmosis_1D import (
     ReverseOsmosis1D,
     ConcentrationPolarizationType,
@@ -210,7 +207,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
     def add_permeate_ph_constraint(self):
         """adds permeate pH constraint, which we assume is average of feed and retentate"""
-        self.ro_product.eq_average_permeate_ph = Constraint(
+        self.ro_product.eq_average_permeate_pH = Constraint(
             expr=self.ro_product.pH
             == 0.5 * self.ro_feed.pH + 0.5 * self.ro_retentate.pH
         )
@@ -567,11 +564,13 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         # scale ph constraints
         if self.ro_retentate.find_component("eq_ph_equality") is not None:
             iscale.constraint_scaling_transform(self.ro_retentate.eq_ph_equality, 1)
-        iscale.constraint_scaling_transform(self.ro_product.eq_average_permeate_ph, 1)
+        iscale.constraint_scaling_transform(
+            self.ro_product.eq_average_permeate_pH, 1 / 10
+        )
         # scale scaling constraints if they exist
         if self.config.add_reaktoro_chemistry:
             for scalant, max_tendency in self.config.selected_scalants.items():
-                sf = 1 / max_tendency / 10
+                sf = 1 / (max_tendency)
                 iscale.set_scaling_factor(self.ro_unit.scaling_tendency[scalant], sf)
                 iscale.set_scaling_factor(
                     self.ro_unit.maximum_scaling_tendency[scalant], sf

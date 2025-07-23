@@ -62,8 +62,8 @@ import re
 
 
 def main():
-    # feed_water = "../water_sources/USDA_brackish.yaml"
-    # feed_water = "../water_sources/sample_500_hardness.yaml"
+    feed_water = "../water_sources/USDA_brackish.yaml"
+    feed_water = "../water_sources/sample_500_hardness.yaml"
     feed_water = "../water_sources/sample_1500_hardness.yaml"
     m = build_model(
         feed_water,
@@ -72,7 +72,7 @@ def main():
         bfgs_initialization_type="GaussNewton",
     )
     initialize(m)
-    if "USDA" in feed_water:
+    if False:  # "USDA" in feed_water:
         m.fs.water_recovery.fix(60 / 100)
         solve_model(m)
         m.fs.water_recovery.fix(65 / 100)
@@ -129,6 +129,7 @@ def build_model(
     hpro=False,
     rkt_hessian_type="LBFGS",
     bfgs_initialization_type="GaussNewton",
+    rkt_scaling_type="variable_oi_scaling_square_sum",
 ):
     """Builds the flowsheet model for the softening-acidification-RO process.
     Args:
@@ -164,12 +165,18 @@ def build_model(
         "hessian_options": {
             "hessian_type": rkt_hessian_type,
             "bfgs_initialization_type": bfgs_initialization_type,
-        }
+        },
+        "jacobian_options": {
+            "scaling_type": rkt_scaling_type,
+        },
     }
     if multi_process_reaktoro:
         rkt_options = enable_multi_process_reaktoro(
             m, rkt_hessian_type, bfgs_initialization_type
         )
+        rkt_options["jacobian_options"] = {
+            "scaling_type": rkt_scaling_type,
+        }
     m.fs = FlowsheetBlock()
     m.fs.costing = WaterTAPCosting()
     m.fs.properties = MCASParameterBlock(**mcas_props)
@@ -191,7 +198,7 @@ def build_model(
     m.fs.acidification_unit = ChemicalAdditionUnit(
         default_property_package=m.fs.properties,
         default_costing_package=m.fs.costing,
-        selected_reagents=["HCl"],
+        selected_reagents=["HCl", "H2SO4"],
         reaktoro_options=rkt_options,
     )
     if "Seawater" in water_case:
@@ -210,7 +217,7 @@ def build_model(
         default_property_package=m.fs.properties,
         default_costing_package=m.fs.costing,
         ro_property_package=m.fs.ro_properties,
-        selected_scalants={"Calcite": 1, "Gypsum": 1, "Brucite": 1},
+        selected_scalants={"Calcite": 1, "Gypsum": 1},
         reaktoro_options=rkt_options,
     )
 
@@ -230,7 +237,7 @@ def build_model(
             default_property_package=m.fs.properties,
             default_costing_package=m.fs.costing,
             ro_property_package=m.fs.ro_properties,
-            selected_scalants={"Calcite": 1, "Gypsum": 1, "Brucite": 1},
+            selected_scalants={"Calcite": 1, "Gypsum": 1},
             reaktoro_options=rkt_options,
             default_costing_package_kwargs={
                 "costing_method_arguments": {"ro_type": "high_pressure"}
@@ -385,9 +392,8 @@ def fix_and_scale(m):
 
     iscale.calculate_scaling_factors(m)
     m.fs.softening_unit.precipitation_reactor.alkalinity.setlb(10)
-    # m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(12.5)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(6)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(11)
+    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(5)
+    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(13)
     assert degrees_of_freedom(m) == 0
 
 
@@ -440,7 +446,7 @@ def test_func(m, **kwargs):
     return True
 
 
-def solve_model(m, tee=False, **kwargs):
+def solve_model(m, tee=True, **kwargs):
     solver = get_cyipopt_watertap_solver(
         ma27=True,
         max_iter=1000,
@@ -556,10 +562,10 @@ def _parse_ipopt_output(output):
                             f"float:\n\t{sys.exc_info()[1]}\n\t{line}"
                         )
 
-            assert len(iterations) == iter_data.pop("iter"), (
-                f"Parsed row in the iterations table\n\t{line}\ndoes not "
-                f"match the next expected iteration number ({len(iterations)})"
-            )
+            # assert len(iterations) == iter_data.pop("iter"), (
+            #     f"Parsed row in the iterations table\n\t{line}\ndoes not "
+            #     f"match the next expected iteration number ({len(iterations)})"
+            # )
             iterations.append(iter_data)
 
         parsed_data["iteration_log"] = iterations

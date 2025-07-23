@@ -138,7 +138,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "add_hardness",
         ConfigValue(
-            default=True,
+            default=False,
             description="Defines if to add Calcium and Magnesium hardness precipitate output",
             doc="""
             This will calculate Calcium (if present), Magnesium (if present) and Total hardness as CaCO3.
@@ -320,7 +320,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         ) in self.precipitation_reactor.flow_mol_precipitate.items():
             self.rkt_block_outputs[("speciesAmount", phase)] = obj
 
-        if self.config.add_alkalinity != False:
+        if self.config.add_alkalinity:
             self.precipitation_reactor.alkalinity = Var(
                 initialize=1,
                 units=pyunits.mg / pyunits.L,
@@ -375,10 +375,18 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             self.precipitation_reactor.flow_mol_reagent[reagent].setlb(0)
 
         self.precipitation_reactor.waste_mass_frac_precipitate.fix(0.2)
-
+        for phase, ion in self.precipitation_reactor.separator.waste_state[
+            0.0
+        ].flow_mass_phase_comp:
+            self.precipitation_reactor.separator.waste_state[0.0].flow_mass_phase_comp[
+                phase, ion
+            ].setlb(None)
+            self.precipitation_reactor.separator.waste_state[0.0].flow_mol_phase_comp[
+                phase, ion
+            ].setlb(0)
         for precip in self.selected_precipitants.keys():
             self.precipitation_reactor.flow_mol_precipitate[precip].setlb(0)
-            # self.precipitation_reactor.flow_mass_precipitate[precip].setlb(0)
+            self.precipitation_reactor.flow_mass_precipitate[precip].setlb(None)
             if self.config.add_reaktoro_chemistry == False:
                 self.precipitation_reactor.flow_mol_precipitate[precip].fix(1e-5)
 
@@ -393,7 +401,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
 
     def scale_before_initialization(self, **kwargs):
         # TODO: Identify better auto scaling factors for dose/precipitation
-        # generally it appears useing the smallets does step is a good scaling factor
+        # generally it appears using the smallest does step is a good scaling factor
         # but it might change depending on chemicals being added.
         dose_scale = 1 / 0.001  # step size of ppm (or 0.001 kg/m3)
         reagent_ions = {}
@@ -423,14 +431,6 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                     reagent_ions[ion] = mol_scale / stoich
                 else:
                     reagent_ions[ion] = mol_scale / stoich
-            print(
-                "Scaling reagent",
-                reagent,
-                mol_scale,
-                mass_flow_scale,
-                1 / mol_scale,
-                1 / mass_flow_scale,
-            )
             iscale.set_scaling_factor(
                 self.precipitation_reactor.flow_mol_reagent[reagent],
                 mol_scale,
@@ -445,7 +445,6 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             for ion, stoich in self.selected_precipitants[precip][
                 "precipitation_stoichiometric"
             ].items():
-                # Assume the amount we precipitate is 10 times less then is limiting ion
                 sc = (
                     self.config.default_property_package._default_scaling_factors[
                         "flow_mol_phase_comp", ("Liq", ion)
@@ -469,20 +468,6 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                     )
                 )
             )
-            print(
-                "Scaling precipitate",
-                precip,
-                mol_precip_scale,
-                mass_precip_scale,
-                1 / mol_precip_scale,
-                1 / mass_precip_scale,
-                value(
-                    pyunits.convert(
-                        self.config.viable_precipitants[precip]["mw"],
-                        pyunits.kg / pyunits.mol,
-                    )
-                ),
-            )
             iscale.set_scaling_factor(
                 self.precipitation_reactor.flow_mass_precipitate[precip],
                 mass_precip_scale,
@@ -492,28 +477,27 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor.flow_mol_precipitate[precip],
                 mol_precip_scale,
             )
-        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1 / 10)
+        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1)
         if self.config.add_reaktoro_chemistry:
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
-                self.precipitation_reactor, self.precipitation_reactor.flow_mol_reagent
+                self.precipitation_reactor
             )
-
+            if self.config.add_alkalinity:
+                iscale.set_scaling_factor(self.precipitation_reactor.alkalinity, 1)
         else:
-            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1 / 10)
+            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1)
         if self.config.add_hardness:
-            iscale.set_scaling_factor(self.precipitation_reactor.hardness["Ca"], 1 / 10)
-            iscale.set_scaling_factor(self.precipitation_reactor.hardness["Mg"], 1 / 10)
-            iscale.set_scaling_factor(
-                self.precipitation_reactor.hardness["Total"], 1 / 10
+            iscale.set_scaling_factor(self.precipitation_reactor.hardness["Ca"], 1)
+            iscale.set_scaling_factor(self.precipitation_reactor.hardness["Mg"], 1)
+            iscale.set_scaling_factor(self.precipitation_reactor.hardness["Total"], 1)
+            iscale.constraint_scaling_transform(
+                self.precipitation_reactor.eq_hardness["Ca"], 1
             )
             iscale.constraint_scaling_transform(
-                self.precipitation_reactor.eq_hardness["Ca"], 1 / 10
+                self.precipitation_reactor.eq_hardness["Mg"], 1
             )
             iscale.constraint_scaling_transform(
-                self.precipitation_reactor.eq_hardness["Mg"], 1 / 10
-            )
-            iscale.constraint_scaling_transform(
-                self.precipitation_reactor.eq_hardness["Total"], 1 / 10
+                self.precipitation_reactor.eq_hardness["Total"], 1
             )
 
     def initialize_unit(self, **kwargs):
@@ -562,7 +546,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             treated_state["Alkalinity (mg/L as CaCO3)"] = (
                 self.precipitation_reactor.alkalinity
             )
-        if self.add_hardness:
+        if self.config.add_hardness:
             treated_state["Ca hardness (mg/L as CaCO3)"] = (
                 self.precipitation_reactor.hardness["Ca"]
             )

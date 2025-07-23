@@ -162,13 +162,13 @@ class ViableReagentsBase(dict):
         else:
             return None
 
-    def scale_solvent_vars_and_constraints(self, block, reagent_var):
+    def scale_solvent_vars_and_constraints(self, block):
         for solvent, info in self.solvent_info.items():
             sfs = []
             for var in info:
                 sf = iscale.get_scaling_factor(var)
                 sfs.append(sf)
-            sff = max(sfs)  # lets grab maximum scaling factor
+            sff = min(sfs)  # lets grab minimum scaling factor
             iscale.set_scaling_factor(
                 block.find_component("flow_mol_solvent")[solvent], sff
             )
@@ -293,7 +293,6 @@ class ReaktoroOptionsContainer(dict):
             pass
         else:
             for key, item in options.items():
-                print(key, item)
                 if isinstance(item, dict):
                     if key in self:
                         self[key].update(item)
@@ -301,4 +300,3 @@ class ReaktoroOptionsContainer(dict):
                         self[key] = item
                 else:
                     self[key] = item
-        print(self)

@@ -191,7 +191,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
     def set_fixed_operation(self):
         """fixes operation point for chemical addition unit model"""
         for reagent, _ in self.selected_reagents.items():
-            self.chemical_reactor.reagent_dose[reagent].fix(50 / 1000)
+            self.chemical_reactor.reagent_dose[reagent].fix(10 / 1000)
         for reagent, options in self.selected_reagents.items():
             self.chemical_reactor.reagent_dose[reagent].setlb(
                 options["min_dose"] / 1000
@@ -235,7 +235,11 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 self.chemical_reactor.reagent_dose[reagent], dose_scale
             )
 
-        iscale.set_scaling_factor(self.chemical_reactor.pH, 1 / 10)
+        iscale.set_scaling_factor(self.chemical_reactor.pH, 1)
+        if self.config.add_reaktoro_chemistry:
+            self.config.viable_reagents.scale_solvent_vars_and_constraints(
+                self.chemical_reactor
+            )
 
     def initialize_unit(self, **kwargs):
         self.chemical_reactor.initialize()

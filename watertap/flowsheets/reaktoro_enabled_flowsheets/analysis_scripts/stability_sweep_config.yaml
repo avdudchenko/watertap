@@ -1,93 +1,106 @@
-# analysis_sweep:
-#   build_loop:
-#     water_sim_cases:
-#       BGW:
-#         water_case: "../water_sources/USDA_brackish.yaml"
-#         hpro: False
-#       SW_RO:
-#         water_case: "../water_sources/Seawater.yaml"
-#         hpro: False
-#       SW_HPRO:
-#         water_case: "../water_sources/Seawater.yaml"
-#         hpro: True
-#       BGW_500:
-#         water_case: "../water_sources/sample_500_hardness.yaml"
-#         hpro: False
-#       BGW_1500:
-#         water_case: "../water_sources/sample_1500_hardness.yaml"
-#         hpro: False
-#     sweep_param_loop:
-#       water_recovery:
-#         type: LinearSample
-#         param: fs.water_recovery
-#         lower_limit: 0.5
-#         upper_limit: 0.9
-#         num_samples: 41
-
-stability_sweep:
-  build_loop: 
-    hessian_sim_cases:
-      lmt_sc1:
-        rkt_hessian_type: limited-memory
-        bfgs_initialization_type: scalar1
-      zero_hs:
-        rkt_hessian_type: ZeroHessian
-        bfgs_initialization_type: scalar1
-      gauss_newton:
-        rkt_hessian_type: GaussNewton
-        bfgs_initialization_type: scalar1
-      lbfgs_sc1:
-        rkt_hessian_type: LBFGS
-        bfgs_initialization_type: scalar1
-      lbfgs_gn:
-        rkt_hessian_type: LBFGS
-        bfgs_initialization_type: GaussNewton
-      bfgs_sc1:
-        rkt_hessian_type: BFGS
-        bfgs_initialization_type: scalar1
-      bfgs_gn:
-        rkt_hessian_type: BFGS
-        bfgs_initialization_type: GaussNewton
-      bfgs_mod_sc1:
-        rkt_hessian_type: BFGS_mod
-        bfgs_initialization_type: scalar1
-      bfgs_mod_gn:
-        rkt_hessian_type: BFGS_mod
-        bfgs_initialization_type: GaussNewton
-      bfgs_damp_sc1:
-        rkt_hessian_type: BFGS_damp
-        bfgs_initialization_type: scalar1
-      bfgs_damp_gn:
-        rkt_hessian_type: BFGS_damp
-        bfgs_initialization_type: GaussNewton
-      bfgs_ipopt_sc1:
-        rkt_hessian_type: BFGS_ipopt
-        bfgs_initialization_type: scalar1
-      bfgs_ipopt_gn:
-        rkt_hessian_type: BFGS_ipopt
-        bfgs_initialization_type: GaussNewton
+analysis_sweep:
+  build_loop:
+    rkt_scaling_type:
+      # - variable_output_scaling
+      # - variable_oi_scaling_inverse_sum
+      - variable_oi_scaling_square_sum
+      - jacobian_matrix_inverse_sum
+      - jacobian_matrix_square_sum
     build_loop:
       water_sim_cases:
-        BGW:
-          water_case: "../water_sources/USDA_brackish.yaml"
-          hpro: False
-        SW_RO:
-          water_case: "../water_sources/Seawater.yaml"
-          hpro: False
-        SW_HPRO:
-          water_case: "../water_sources/Seawater.yaml"
-          hpro: True
         BGW_500:
           water_case: "../water_sources/sample_500_hardness.yaml"
           hpro: False
         BGW_1500:
           water_case: "../water_sources/sample_1500_hardness.yaml"
           hpro: False
+        BGW:
+          water_case: "../water_sources/USDA_brackish.yaml"
+          hpro: False
+        # SW_RO:
+        #   water_case: "../water_sources/Seawater.yaml"
+        #   hpro: False
+        # SW_HPRO:
+        #   water_case: "../water_sources/Seawater.yaml"
+        #   hpro: True
       sweep_param_loop:
         water_recovery:
           type: LinearSample
           param: fs.water_recovery
           lower_limit: 0.5
           upper_limit: 0.9
-          num_samples: 11
+          num_samples: 41
+
+# stability_sweep:
+#   build_loop: 
+#     hessian_sim_cases:
+#       lmt_sc1:
+#         rkt_hessian_type: limited-memory
+#         bfgs_initialization_type: scalar1
+#       zero_hs:
+#         rkt_hessian_type: ZeroHessian
+#         bfgs_initialization_type: scalar1
+#       gauss_newton:
+#         rkt_hessian_type: GaussNewton
+#         bfgs_initialization_type: scalar1
+#       lbfgs_sc1:
+#         rkt_hessian_type: LBFGS
+#         bfgs_initialization_type: scalar1
+#       lbfgs_gn:
+#         rkt_hessian_type: LBFGS
+#         bfgs_initialization_type: GaussNewton
+#       bfgs_sc1:
+#         rkt_hessian_type: BFGS
+#         bfgs_initialization_type: scalar1
+#       bfgs_gn:
+#         rkt_hessian_type: BFGS
+#         bfgs_initialization_type: GaussNewton
+#       cbfgs_sc1:
+#         rkt_hessian_type: CBFGS
+#         bfgs_initialization_type: scalar1
+#       cbfgs_gn:
+#         rkt_hessian_type: CBFGS
+#         bfgs_initialization_type: GaussNewton
+#       # bfgs_mod_sc1:
+#       #   rkt_hessian_type: BFGS_mod
+#       #   bfgs_initialization_type: scalar1
+#       # bfgs_mod_gn:
+#       #   rkt_hessian_type: BFGS_mod
+#       #   bfgs_initialization_type: GaussNewton
+#       bfgs_damp_sc1:
+#         rkt_hessian_type: BFGS_damp
+#         bfgs_initialization_type: scalar1
+#       bfgs_damp_gn:
+#         rkt_hessian_type: BFGS_damp
+#         bfgs_initialization_type: GaussNewton
+#       bfgs_ipopt_sc1:
+#         rkt_hessian_type: BFGS_ipopt
+#         bfgs_initialization_type: scalar1
+#       bfgs_ipopt_gn:
+#         rkt_hessian_type: BFGS_ipopt
+#         bfgs_initialization_type: GaussNewton
+#     build_loop:
+#       water_sim_cases:
+#         BGW:
+#           water_case: "../water_sources/USDA_brackish.yaml"
+#           hpro: False
+#         SW_RO:
+#           water_case: "../water_sources/Seawater.yaml"
+#           hpro: False
+#         SW_HPRO:
+#           water_case: "../water_sources/Seawater.yaml"
+#           hpro: True
+#         BGW_500:
+#           water_case: "../water_sources/sample_500_hardness.yaml"
+#           hpro: False
+#         BGW_1500:
+#           water_case: "../water_sources/sample_1500_hardness.yaml"
+#           hpro: False
+#       sweep_param_loop:
+#         water_recovery:
+#           type: LinearSample
+#           param: fs.water_recovery
+#           lower_limit: 0.5
+#           upper_limit: 0.9
+#           num_samples: 11
 

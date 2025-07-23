@@ -196,8 +196,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         self.feed.pH.fix(self.config.pH)
 
         # Doing a solve with out scaling -this in general works
-        # as we have a simple problem, but soluton might be sub optimal
-        # this will still give a good intial state however to move forward
+        # as we have a simple problem, but solution might be sub optimal
+        # this will still give a good initial state however to move forward
 
         interval_initializer(self.feed)
         if solver is None:
@@ -307,12 +307,11 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         assert degrees_of_freedom(self) == 0
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.feed.pH, 1 / 10)
+        iscale.set_scaling_factor(self.feed.pH, 1)
         self.scale_feed()
 
     def scale_feed(self):
         for idx in self.feed.properties[0].flow_mol_phase_comp:
-
             scale = 1 / self.feed.properties[0].flow_mol_phase_comp[idx].value
             self.config.default_property_package.set_default_scaling(
                 "flow_mol_phase_comp", scale, index=idx

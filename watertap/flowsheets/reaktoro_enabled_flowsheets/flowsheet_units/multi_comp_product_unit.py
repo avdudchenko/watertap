@@ -34,7 +34,7 @@ class MultiCompProductData(WaterTapFlowsheetBlockData):
         self.product.properties[0].flow_mass_phase_comp[...]
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.product.pH, 1 / 10)
+        iscale.set_scaling_factor(self.product.pH, 1)
 
     def initialize_unit(self, solver=None, tee=True):
         self.product.initialize()

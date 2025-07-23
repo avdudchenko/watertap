@@ -96,10 +96,9 @@ class SplitterPhUnitData(WaterTapFlowsheetBlockData):
         )
         self.splitter.find_component(f"mixed_state")[0].flow_mass_phase_comp[...]
         self.splitter.find_component(f"mixed_state")[0].conc_mass_phase_comp[...]
-        #
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.splitter.pH, 1 / 10)
+        iscale.set_scaling_factor(self.splitter.pH, 1)
 
     def set_fixed_operation(self):
         """fixes operation point for pump unit model

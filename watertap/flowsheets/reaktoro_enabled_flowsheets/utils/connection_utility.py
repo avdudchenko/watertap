@@ -61,10 +61,11 @@ class ConnectionContainer:
         builds a standard arc while naming it with outlet and inlet name, this should
         be a unique pair always (e.g. for a unit model you should only havbe single outlet-> inlet conenction)
         """
-        self.registered_arc = outlet.unit_block_reference.add_component(
+        outlet.unit_block_reference.add_component(
             f"{outlet.name}_to_{inlet.name}",
             Arc(source=outlet.port, destination=inlet.port),
         )
+        # find it, if it was not created correctly, we will get an error
         self.registered_arc = outlet.unit_block_reference.find_component(
             f"{outlet.name}_to_{inlet.name}"
         )

@@ -1,5 +1,5 @@
 __author__ = "Alexander Dudchenko"
-__author__ = "Alexander Dudchenko"
+
 
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_block import (
     WaterTapFlowsheetBlockData,
@@ -558,7 +558,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             )
             iscale.set_scaling_factor(
                 self.ro_unit.water_removed_at_interface,
-                prop_scaling["H2O_mol"] * prop_scaling[self.ro_solute_type],
+                prop_scaling["H2O_mol"],
             )
 
         # scale ph constraints

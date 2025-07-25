@@ -64,7 +64,8 @@ import re
 def main():
     feed_water = "../water_sources/USDA_brackish.yaml"
     feed_water = "../water_sources/sample_500_hardness.yaml"
-    feed_water = "../water_sources/sample_1500_hardness.yaml"
+    # feed_water = "../water_sources/sample_1500_hardness.yaml"
+    # feed_water = "../water_sources/Seawater.yaml"
     m = build_model(
         feed_water,
         hpro=False,
@@ -129,7 +130,7 @@ def build_model(
     hpro=False,
     rkt_hessian_type="LBFGS",
     bfgs_initialization_type="GaussNewton",
-    rkt_scaling_type="variable_oi_scaling_square_sum",
+    # rkt_scaling_type="variable_oi_scaling_square_sum",
 ):
     """Builds the flowsheet model for the softening-acidification-RO process.
     Args:
@@ -166,17 +167,17 @@ def build_model(
             "hessian_type": rkt_hessian_type,
             "bfgs_initialization_type": bfgs_initialization_type,
         },
-        "jacobian_options": {
-            "scaling_type": rkt_scaling_type,
-        },
+        # "jacobian_options": {
+        #     "scaling_type": rkt_scaling_type,
+        # },
     }
     if multi_process_reaktoro:
         rkt_options = enable_multi_process_reaktoro(
             m, rkt_hessian_type, bfgs_initialization_type
         )
-        rkt_options["jacobian_options"] = {
-            "scaling_type": rkt_scaling_type,
-        }
+        # rkt_options["jacobian_options"] = {
+        #     "scaling_type": rkt_scaling_type,
+        # }
     m.fs = FlowsheetBlock()
     m.fs.costing = WaterTAPCosting()
     m.fs.properties = MCASParameterBlock(**mcas_props)
@@ -393,7 +394,9 @@ def fix_and_scale(m):
     iscale.calculate_scaling_factors(m)
     m.fs.softening_unit.precipitation_reactor.alkalinity.setlb(10)
     m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(5)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(13)
+    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(12)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setlb(5)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(12)
     assert degrees_of_freedom(m) == 0
 
 

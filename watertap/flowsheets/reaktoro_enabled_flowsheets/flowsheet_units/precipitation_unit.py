@@ -483,7 +483,9 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor
             )
             if self.config.add_alkalinity:
-                iscale.set_scaling_factor(self.precipitation_reactor.alkalinity, 1)
+                iscale.set_scaling_factor(
+                    self.precipitation_reactor.alkalinity, 1 / 100
+                )
         else:
             iscale.constraint_scaling_transform(self.eq_outlet_pH, 1)
         if self.config.add_hardness:

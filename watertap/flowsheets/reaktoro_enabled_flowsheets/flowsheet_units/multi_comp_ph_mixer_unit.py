@@ -203,9 +203,9 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
 
     def scale_before_initialization(self, **kwargs):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
-        iscale.set_scaling_factor(self.mixer.pH, 1)
+        iscale.set_scaling_factor(self.mixer.pH, 1 / 10)
         if self.config.add_reaktoro_chemistry == False:
-            iscale.constraint_scaling_transform(self.mixer.eq_pH, 1)
+            iscale.constraint_scaling_transform(self.mixer.eq_pH, 1 / 10)
 
     def initialize_streams(self, **kwargs):
         self.fixed_streams = []

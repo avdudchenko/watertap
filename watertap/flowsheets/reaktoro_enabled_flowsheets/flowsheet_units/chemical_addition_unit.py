@@ -235,7 +235,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 self.chemical_reactor.reagent_dose[reagent], dose_scale
             )
 
-        iscale.set_scaling_factor(self.chemical_reactor.pH, 1)
+        iscale.set_scaling_factor(self.chemical_reactor.pH, 1 / 10)
         if self.config.add_reaktoro_chemistry:
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
                 self.chemical_reactor

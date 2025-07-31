@@ -64,7 +64,7 @@ import re
 def main():
     feed_water = "../water_sources/USDA_brackish.yaml"
     feed_water = "../water_sources/sample_500_hardness.yaml"
-    # feed_water = "../water_sources/sample_1500_hardness.yaml"
+    feed_water = "../water_sources/sample_1500_hardness.yaml"
     # feed_water = "../water_sources/Seawater.yaml"
     m = build_model(
         feed_water,
@@ -80,7 +80,7 @@ def main():
         solve_model(m)
         start = 70
     else:
-        start = 50
+        start = 70
     for r in range(start, 91, 1):
         m.fs.water_recovery.fix(r / 100)
         print(f"\n\n------------Solving for water recovery: {r}%------------")
@@ -190,7 +190,10 @@ def build_model(
     m.fs.softening_unit = PrecipitationUnit(
         default_property_package=m.fs.properties,
         default_costing_package=m.fs.costing,
-        selected_precipitants=["Calcite", "Brucite"],
+        selected_precipitants=[
+            "Calcite",
+            "Brucite",
+        ],
         selected_reagents=["Na2CO3", "CaO"],
         add_alkalinity=True,
         reaktoro_options=rkt_options,
@@ -338,6 +341,7 @@ def add_global_constraints(m):
 def add_perfoance_tracking_vars(m):
     m.fs.ipopt_iterations = Var(
         [
+            "Number of iterations",
             "Objective function evaluations",
             "Objective gradient evaluations",
             "Equality constraint evaluations",
@@ -394,9 +398,14 @@ def fix_and_scale(m):
     iscale.calculate_scaling_factors(m)
     m.fs.softening_unit.precipitation_reactor.alkalinity.setlb(10)
     m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(5)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(12)
+    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(10)
+    m.fs.ro_unit.ro_feed.pH.setlb(5)
+    m.fs.ro_unit.ro_feed.pH.setub(10)
+    if m.fs.find_component("hp_pump_unit") is not None:
+        m.fs.hpro_unit.ro_feed.pH.setlb(5)
+        m.fs.hpro_unit.ro_feed.pH.setub(10)
     m.fs.softening_unit.precipitation_reactor.pH["outlet"].setlb(5)
-    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(12)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(10)
     assert degrees_of_freedom(m) == 0
 
 
@@ -404,7 +413,7 @@ def initialize(m, **kwargs):
     for unit in m.flowsheet_unit_order:
         unit.initialize()
     m.fs.costing.initialize()
-    report_all_units(m)
+    # report_all_units(m)
     solve_model(m)
     set_optimization(m)
 
@@ -449,7 +458,7 @@ def test_func(m, **kwargs):
     return True
 
 
-def solve_model(m, tee=True, **kwargs):
+def solve_model(m, tee=False, **kwargs):
     solver = get_cyipopt_watertap_solver(
         ma27=True,
         max_iter=1000,
@@ -482,6 +491,7 @@ def solve_model(m, tee=True, **kwargs):
         )
         os.remove(tmp.name)
         parsed_output = _parse_ipopt_output(lines)
+
         iters_keys = list(m.fs.ipopt_iterations.keys())
         for i, k in enumerate(iters_match.groups()):
             if k is not None:
@@ -495,10 +505,11 @@ def solve_model(m, tee=True, **kwargs):
             m.fs.scaled_ipopt_result[key] = parsed_output["final_scaled_results"].get(
                 key, 0
             )
-        m.fs.ipopt_iterations.display()
-        m.fs.scaled_ipopt_result.display()
-        m.fs.unscaled_ipopt_result.display()
-    report_all_units(m)
+        m.fs.ipopt_iterations["Number of iterations"] = int(parsed_output["iters"])
+        # m.fs.ipopt_iterations.display()
+        # m.fs.scaled_ipopt_result.display()
+        # m.fs.unscaled_ipopt_result.display()
+    # report_all_units(m)
     assert_optimal_termination(result)
     return result
 

@@ -296,12 +296,14 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                     == blk.properties_in[0].flow_mass_phase_comp[liq, ion]
                 )
             else:
-                return (
-                    blk.properties_out[0].flow_mol_phase_comp[liq, ion] * sum(tds_in)
-                    == inlet_composition[0.0, liq, ion]
-                    * blk.properties_in[0].flow_mass_phase_comp[
-                        "Liq", self.ro_solute_type
-                    ]
+                return blk.properties_out[0].flow_mol_phase_comp[
+                    liq, ion
+                ] == inlet_composition[0.0, liq, ion] * blk.properties_in[
+                    0
+                ].flow_mass_phase_comp[
+                    "Liq", self.ro_solute_type
+                ] / sum(
+                    tds_in
                 )
 
         translator_block.eq_pressure_equality = Constraint(
@@ -390,12 +392,11 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             expr=(
                 self.ro_unit.water_removed_at_interface
                 * self.config.default_property_package.mw_comp["H2O"]
-                * ro_cp_interface.flow_mass_phase_comp["Liq", self.ro_solute_type]
             )
             == self.ro_unit.inlet.flow_mass_phase_comp[0, "Liq", "H2O"]
-            * ro_cp_interface.flow_mass_phase_comp["Liq", self.ro_solute_type]
             - self.ro_unit.inlet.flow_mass_phase_comp[0, "Liq", self.ro_solute_type]
             * ro_cp_interface.flow_mass_phase_comp["Liq", "H2O"]
+            / ro_cp_interface.flow_mass_phase_comp["Liq", self.ro_solute_type]
         )
 
     def add_reaktoro_chemistry(self):
@@ -430,7 +431,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options.system_state_modifier_option(
             "pressure", ro_cp_interface.pressure
         )
-
+        iscale.set_scaling_factor(ro_cp_interface.pressure, 1e-5)  # ensure its scaled!
         self.reaktoro_options["outputs"] = outputs
         self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.scaling_block = ReaktoroBlock(**self.reaktoro_options)
@@ -505,9 +506,9 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
 
     def scale_before_initialization(self, **kwargs):
         """scales the unit before initialization"""
-        iscale.set_scaling_factor(self.ro_feed.pH, 1)
-        iscale.set_scaling_factor(self.ro_retentate.pH, 1)
-        iscale.set_scaling_factor(self.ro_product.pH, 1)
+        iscale.set_scaling_factor(self.ro_feed.pH, 1 / 10)
+        iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 10)
+        iscale.set_scaling_factor(self.ro_product.pH, 1 / 10)
         # scale monotone cp constraint if it exists
         if self.ro_unit.find_component("monotone_cp_constraint") is not None:
             for eq in self.ro_unit.monotone_cp_constraint:
@@ -540,11 +541,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             # for default property package, Water scaling is same for both
 
             for ion in block.eq_flow_mass_phase_comp:
-                if ion != "TDS" or ion != "H2O":
-                    sf_salt = prop_scaling[self.ro_solute_type]
-                else:
-                    sf_salt = 1
-                sf = prop_scaling[ion] * sf_salt
+                sf = prop_scaling[ion]  # * sf_salt
                 iscale.constraint_scaling_transform(
                     block.eq_flow_mass_phase_comp[ion],
                     sf,
@@ -554,17 +551,20 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         if self.ro_unit.find_component("eq_water_removed_at_interface") is not None:
             iscale.constraint_scaling_transform(
                 self.ro_unit.eq_water_removed_at_interface,
-                prop_scaling["H2O_mol"] * prop_scaling[self.ro_solute_type],
+                prop_scaling["H2O_mol"],
             )
+
             iscale.set_scaling_factor(
                 self.ro_unit.water_removed_at_interface,
-                prop_scaling["H2O_mol"],
+                prop_scaling["H2O_mol"] * 10,
             )
 
         # scale ph constraints
         if self.ro_retentate.find_component("eq_ph_equality") is not None:
             iscale.constraint_scaling_transform(self.ro_retentate.eq_ph_equality, 1)
-        iscale.constraint_scaling_transform(self.ro_product.eq_average_permeate_pH, 1)
+        iscale.constraint_scaling_transform(
+            self.ro_product.eq_average_permeate_pH, 1 / 10
+        )
         # scale scaling constraints if they exist
         if self.config.add_reaktoro_chemistry:
             for scalant, max_tendency in self.config.selected_scalants.items():

@@ -477,17 +477,15 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor.flow_mol_precipitate[precip],
                 mol_precip_scale,
             )
-        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1)
+        iscale.set_scaling_factor(self.precipitation_reactor.pH, 1 / 10)
         if self.config.add_reaktoro_chemistry:
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
                 self.precipitation_reactor
             )
             if self.config.add_alkalinity:
-                iscale.set_scaling_factor(
-                    self.precipitation_reactor.alkalinity, 1 / 100
-                )
+                iscale.set_scaling_factor(self.precipitation_reactor.alkalinity, 1)
         else:
-            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1)
+            iscale.constraint_scaling_transform(self.eq_outlet_pH, 1 / 10)
         if self.config.add_hardness:
             iscale.set_scaling_factor(self.precipitation_reactor.hardness["Ca"], 1)
             iscale.set_scaling_factor(self.precipitation_reactor.hardness["Mg"], 1)

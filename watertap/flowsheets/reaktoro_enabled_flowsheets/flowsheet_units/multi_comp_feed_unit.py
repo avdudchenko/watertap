@@ -307,7 +307,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         assert degrees_of_freedom(self) == 0
 
     def scale_before_initialization(self, **kwargs):
-        iscale.set_scaling_factor(self.feed.pH, 1)
+        iscale.set_scaling_factor(self.feed.pH, 1 / 10)
         self.scale_feed()
 
     def scale_feed(self):

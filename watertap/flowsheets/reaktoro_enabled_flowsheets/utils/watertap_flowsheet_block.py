@@ -3,13 +3,8 @@ from idaes.core.base.flowsheet_model import FlowsheetBlockData
 from idaes.core import (
     declare_process_block_class,
 )
-
 from pyomo.common.config import ConfigValue
 
-from pyomo.environ import (
-    value,
-    units as pyunits,
-)
 from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.connection_utility import (
     PortContainer,
     ConnectionContainer,

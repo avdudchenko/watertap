@@ -75,7 +75,7 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ERD.inlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.control_volume.work, 1e-4)
-        iscale.set_scaling_factor(self.ERD.pH, 1)
+        iscale.set_scaling_factor(self.ERD.pH, 1 / 10)
 
     def initialize_unit(self):
         self.ERD.initialize()

@@ -15,6 +15,7 @@ def main():
         probe_function=sar.test_func,
         saving_dir=cwd,
         number_of_subprocesses=1,
+        num_loop_workers=3,
     )
 
 

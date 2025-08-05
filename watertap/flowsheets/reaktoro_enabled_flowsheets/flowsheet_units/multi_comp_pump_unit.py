@@ -118,7 +118,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.pump.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.pump.control_volume.work, 1e-4)
-        iscale.set_scaling_factor(self.pump.pH, 1/10)
+        iscale.set_scaling_factor(self.pump.pH, 1 / 10 / 10)
 
     def initialize_unit(self):
         self.set_fixed_operation()

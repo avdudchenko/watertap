@@ -115,6 +115,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                    Reaktoro gets its composition information""",
         ),
     )
+    CONFIG.declare(
+        "add_alkalinity",
+        ConfigValue(
+            default=True,
+            description="Defines if to add alkalinity to Reaktoro output",
+            doc="""
+                Defines if to add alkalinity to Reaktoro output, this will use Reaktoro to calculate alkalinity
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -407,7 +417,13 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             outputs[("scalingTendency", scalant)] = self.ro_unit.scaling_tendency[
                 scalant
             ]
-
+        if self.config.add_alkalinity:
+            self.ro_unit.alkalinity = Var(
+                initialize=1,
+                units=pyunits.mg / pyunits.L,
+                doc="Alkalinity (mg/L as CaCO3)",
+            )
+            outputs[("alkalinityAsCaCO3", None)] = self.ro_unit.alkalinity
         ro_cp_interface = self.ro_unit.feed_side.properties_interface[0, 1]
 
         self.reaktoro_options = ReaktoroOptionsContainer()
@@ -551,12 +567,11 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         if self.ro_unit.find_component("eq_water_removed_at_interface") is not None:
             iscale.constraint_scaling_transform(
                 self.ro_unit.eq_water_removed_at_interface,
-                prop_scaling["H2O_mol"],
+                prop_scaling["H2O_mol"] * 10,
             )
 
             iscale.set_scaling_factor(
-                self.ro_unit.water_removed_at_interface,
-                prop_scaling["H2O_mol"] * 10,
+                self.ro_unit.water_removed_at_interface, prop_scaling["H2O_mol"] * 10
             )
 
         # scale ph constraints
@@ -576,7 +591,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 iscale.constraint_scaling_transform(
                     self.ro_unit.eq_max_scaling_tendency[scalant], sf
                 )
-
+            if self.config.add_alkalinity:
+                iscale.set_scaling_factor(self.ro_unit.alkalinity, 1 / 100)
         # scale RO unit
         iscale.set_scaling_factor(self.ro_unit.area, 1 / self.ro_unit.area.value)
         iscale.constraint_scaling_transform(
@@ -732,6 +748,11 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 model_state_dict["Maximum scaling potential"][scalant] = (
                     self.ro_unit.maximum_scaling_tendency[scalant]
                 )
+            if (
+                self.config.add_alkalinity != False
+                and self.ro_unit.find_component("alkalinity") is not None
+            ):
+                model_state_dict["Alkalinity (mg/L as CaCO3)"] = self.ro_unit.alkalinity
         if self.ro_unit.find_component("water_removed_at_interface") is not None:
             model_state_dict["RO operation"][
                 "Water Removed"

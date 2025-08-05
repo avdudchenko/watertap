@@ -80,6 +80,16 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "add_alkalinity",
+        ConfigValue(
+            default=True,
+            description="Defines if to add alkalinity to Reaktoro output",
+            doc="""
+                Defines if to add alkalinity to Reaktoro output, this will use Reaktoro to calculate alkalinity
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -159,7 +169,13 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 reagents[solvent] = self.chemical_reactor.flow_mol_solvent[solvent]
 
         outputs = {("pH", None): self.chemical_reactor.pH["outlet"]}
-
+        if self.config.add_alkalinity:
+            self.chemical_reactor.alkalinity = Var(
+                initialize=1,
+                units=pyunits.mg / pyunits.L,
+                doc="Alkalinity (mg/L as CaCO3)",
+            )
+            outputs[("alkalinityAsCaCO3", None)] = self.chemical_reactor.alkalinity
         self.reaktoro_options = ReaktoroOptionsContainer()
         self.reaktoro_options.system_state_option(
             "temperature",
@@ -240,6 +256,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
                 self.chemical_reactor
             )
+            if self.config.add_alkalinity:
+                iscale.set_scaling_factor(self.chemical_reactor.alkalinity, 1 / 100)
 
     def initialize_unit(self, **kwargs):
         self.chemical_reactor.initialize()
@@ -264,6 +282,17 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         self.inlet.fix()
         unit_dofs = degrees_of_freedom(self)
         self.inlet.unfix()
+        treated_state = get_ion_comp(
+            self.chemical_reactor.dissolution_reactor.properties_out[0],
+            self.chemical_reactor.pH["outlet"],
+        )
+        if (
+            self.config.add_alkalinity != False
+            and self.chemical_reactor.find_component("alkalinity") is not None
+        ):
+            treated_state["Alkalinity (mg/L as CaCO3)"] = (
+                self.chemical_reactor.alkalinity
+            )
         model_state = {
             "Model": {"DOFs": unit_dofs},
             "Inlet state": get_ion_comp(
@@ -272,11 +301,9 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             ),
             "Chemical dosing:": self.chemical_reactor.reagent_dose,
             "Chemical mass flow:": self.chemical_reactor.flow_mass_reagent,
-            "Treated state": get_ion_comp(
-                self.chemical_reactor.dissolution_reactor.properties_out[0],
-                self.chemical_reactor.pH["outlet"],
-            ),
+            "Treated state": treated_state,
         }
+
         if self.config.default_costing_package is not None:
             model_state["Costs"] = {
                 "Capital cost": self.chemical_reactor.costing.capital_cost

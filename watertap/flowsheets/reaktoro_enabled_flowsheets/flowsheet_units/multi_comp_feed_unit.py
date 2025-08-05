@@ -6,8 +6,12 @@ from pyomo.common.config import ConfigValue
 from idaes.models.unit_models import (
     Feed,
 )
+from idaes.core import (
+    FlowsheetBlock,
+)
 
 from pyomo.environ import (
+    ConcreteModel,
     Var,
     value,
     Constraint,
@@ -164,81 +168,94 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             initialize=self.config.pH, bounds=(0, 13), units=pyunits.dimensionless
         )
         self.register_port("outlet", self.feed.outlet, {"pH": self.feed.pH})
+        # if self.config.alkalinity_as_CaCO3 is not None:
+        self.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
+        self.feed.alkalinity_as_CaCO3.fix()
         if self.config.alkalinity_as_CaCO3 is not None:
-            self.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
             self.feed.alkalinity_as_CaCO3.fix(self.config.alkalinity_as_CaCO3)
 
-    def set_fixed_operation(self, solver=None):
+    def set_fixed_operation(self, solver=None, alt_block=None):
         """sets fixed unit operation"""
-
+        if alt_block is None:
+            block = self.feed
+        else:
+            block = alt_block
         for ion, value in self.config.ion_concentrations.items():
-            self.feed.properties[0].conc_mass_phase_comp["Liq", ion].fix(value)
+            block.properties[0].conc_mass_phase_comp["Liq", ion].fix(value)
 
         if self.config.volumetric_flowrate is not None:
-            self.feed.properties[0].flow_vol_phase["Liq"].fix(
+            block.properties[0].flow_vol_phase["Liq"].fix(
                 self.config.volumetric_flowrate
             )
         else:
-            self.feed.total_mass_flow = Constraint(
+            block.total_mass_flow = Constraint(
                 expr=self.config.mass_flowrate
                 == sum(
                     [
-                        self.feed.properties[0].flow_mass_phase_comp[phase, ion]
-                        for phase, ion in self.feed.properties[0].flow_mass_phase_comp
+                        block.properties[0].flow_mass_phase_comp[phase, ion]
+                        for phase, ion in block.properties[0].flow_mass_phase_comp
                     ]
                 )
             )
-            self.feed.properties[0].flow_mass_phase_comp[
+            block.properties[0].flow_mass_phase_comp[
                 "Liq", "H2O"
-            ] = self.config.mass_flowrate  # aproximate
-        self.feed.properties[0].pressure.fix(self.config.pressure)
-        self.feed.properties[0].temperature.fix(self.config.temperature)
-        self.feed.pH.fix(self.config.pH)
+            ] = self.config.mass_flowrate  # approximate
+        block.properties[0].pressure.fix(self.config.pressure)
+        block.properties[0].temperature.fix(self.config.temperature)
+        block.pH.fix(self.config.pH)
 
         # Doing a solve with out scaling -this in general works
         # as we have a simple problem, but solution might be sub optimal
         # this will still give a good initial state however to move forward
 
-        interval_initializer(self.feed)
+        interval_initializer(block)
         if solver is None:
             solver = get_solver()
-        result = solver.solve(self.feed, tee=False)
-
+        result = solver.solve(block, tee=False)
         assert_optimal_termination(result)
-        assert degrees_of_freedom(self.feed) == 0
+        assert degrees_of_freedom(block) == 0
 
     def reaktoro_reconciliation(self):
+        sub_model = ConcreteModel()
+        sub_model.fs = FlowsheetBlock()
+        sub_model.fs.feed = Feed(property_package=self.config.default_property_package)
+        sub_model.fs.feed.pH = Var(units=pyunits.dimensionless)
+        sub_model.fs.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
+        self.set_fixed_operation(alt_block=sub_model.fs.feed)
+        sub_model.fs.feed.charge = Var(units=pyunits.dimensionless)
         self.feed.charge = Var(units=pyunits.dimensionless)
+        sub_model.fs.feed.pH = Var(units=pyunits.dimensionless)
+        sub_model.fs.feed.pH.fix(self.feed.pH.value)
         initial_con = value(
             pyunits.convert(
-                self.feed.properties[0].conc_mass_phase_comp[
+                sub_model.fs.feed.properties[0].conc_mass_phase_comp[
                     "Liq", self.config.charge_balance_ion
                 ],
                 to_units=pyunits.g / pyunits.L,
             )
         )
 
-        outputs = {("charge", None): self.feed.charge}
+        outputs = {("charge", None): sub_model.fs.feed.charge}
 
-        if self.config.alkalinity_as_CaCO3 is not None:
-            outputs[("alkalinityAsCaCO3", None)] = self.feed.alkalinity_as_CaCO3
+        # if self.config.alkalinity_as_CaCO3 is not None:
+        outputs[("alkalinityAsCaCO3", None)] = sub_model.fs.feed.alkalinity_as_CaCO3
 
-        self.feed.properties[0].conc_mass_phase_comp[
+        sub_model.fs.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].unfix()
         reaktoro_options = ReaktoroOptionsContainer()
         reaktoro_options.system_state_option(
             "temperature",
-            self.feed.properties[0].temperature,
+            sub_model.fs.feed.properties[0].temperature,
         )
         reaktoro_options.system_state_option(
             "pressure",
-            self.feed.properties[0].pressure,
+            sub_model.fs.feed.properties[0].pressure,
         )
-        reaktoro_options.system_state_option("pH", self.feed.pH)
+        reaktoro_options.system_state_option("pH", sub_model.fs.feed.pH)
         reaktoro_options.aqueous_phase_option(
             "composition",
-            self.feed.properties[0].flow_mol_phase_comp,
+            sub_model.fs.feed.properties[0].flow_mol_phase_comp,
         )
         reaktoro_options["build_speciation_block"] = False
         reaktoro_options["assert_charge_neutrality"] = False
@@ -247,61 +264,75 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         reaktoro_options["reaktoro_block_manager"] = (
             None  # ensure we dont add this to parallel manager!
         )
-        self.feed.charge_balance_block = ReaktoroBlock(**reaktoro_options)
-        self.feed.charge_balance_block.initialize()
+        sub_model.fs.feed.charge_balance_block = ReaktoroBlock(**reaktoro_options)
+        sub_model.fs.feed.charge_balance_block.initialize()
 
-        self.feed.charge.fix(0)
+        sub_model.fs.feed.charge.fix(0)
         if self.config.alkalinity_as_CaCO3 is not None:
-            self.feed.alkalinity_as_CaCO3.fix(self.config.alkalinity_as_CaCO3)
+            sub_model.fs.feed.alkalinity_as_CaCO3.fix(self.config.alkalinity_as_CaCO3)
             if isinstance(self.config.alkalinity_balance_ions, str):
                 self.config.alkalinity_balance_ions = [
                     self.config.alkalinity_balance_ions
                 ]
             initial_alk_ions = {}
             for ion in self.config.alkalinity_balance_ions:
-                self.feed.properties[0].conc_mass_phase_comp["Liq", ion].unfix()
-                self.feed.properties[0].conc_mass_phase_comp["Liq", ion].setub(5)
-                initial_alk_ions[ion] = (
-                    self.feed.properties[0].conc_mass_phase_comp["Liq", ion].value
+                sub_model.fs.feed.properties[0].conc_mass_phase_comp["Liq", ion].unfix()
+                sub_model.fs.feed.properties[0].conc_mass_phase_comp["Liq", ion].setub(
+                    5
                 )
-        assert degrees_of_freedom(self.feed) == 0
+                initial_alk_ions[ion] = (
+                    sub_model.fs.feed.properties[0]
+                    .conc_mass_phase_comp["Liq", ion]
+                    .value
+                )
+        else:
+            sub_model.fs.feed.alkalinity_as_CaCO3.unfix()
+        assert degrees_of_freedom(sub_model.fs.feed) == 0
         solver = get_cyipopt_watertap_solver()
         _log.info("Reconciling feed with reaktoro")
-        result = solver.solve(self.feed, tee=True)
+        result = solver.solve(sub_model.fs.feed, tee=True)
         assert_optimal_termination(result)
+
+        def replace_name(name, old_model, new_model):
+            return name.replace(old_model, new_model)
+
+        for v in sub_model.fs.component_data_objects(Var):
+            v_n = replace_name(v.name, "fs.feed", "feed")
+            self.find_component(v_n).value = v.value
+            if v.fixed:
+                self.find_component(v_n).fix()
+            else:
+                self.find_component(v_n).unfix()
+
         _log.info("Reconciliation complete")
         balanced_con = value(
             pyunits.convert(
-                self.feed.properties[0].conc_mass_phase_comp[
+                sub_model.fs.feed.properties[0].conc_mass_phase_comp[
                     "Liq", self.config.charge_balance_ion
                 ],
                 to_units=pyunits.g / pyunits.L,
             )
         )
         _log.info("Starting alkalinity reconciliation report")
-        _log.info(f"Charge balanced, current charge is {self.feed.charge.value}")
+        _log.info(
+            f"Charge balanced, current charge is {sub_model.fs.feed.charge.value}"
+        )
         _log.info(
             f"Increased {self.config.charge_balance_ion} from {initial_con} to {balanced_con} g/L)"
         )
-
-        for v in self.feed.charge_balance_block.component_data_objects(Constraint):
-            v.deactivate()
-        self.feed.charge_balance_block.reaktoro_model.deactivate()
-        self.feed.charge_balance_block.deactivate()
+        _log.info(f"Reconciled alkalinity is {self.feed.alkalinity_as_CaCO3.value}")
 
         self.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].fix()
         if self.config.alkalinity_as_CaCO3 is not None:
-            _log.info(
-                f"Reconciled alkalinity for target value of {self.feed.alkalinity_as_CaCO3.value}"
-            )
             for ion in self.config.alkalinity_balance_ions:
                 self.feed.properties[0].conc_mass_phase_comp["Liq", ion].fix()
                 _log.info(
                     f"Changed {ion} from {initial_alk_ions[ion]} to {self.feed.properties[0].conc_mass_phase_comp['Liq', ion].value} g/L"
                 )
-
+        self.feed.alkalinity_as_CaCO3.fix()
+        solver.solve(self.feed, tee=False)
         _log.info("Report complete")
         assert_optimal_termination(result)
         assert degrees_of_freedom(self) == 0
@@ -325,9 +356,9 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         assert_optimal_termination(result)
         if self.config.reconcile_using_reaktoro:
             self.reaktoro_reconciliation()
-        if self.feed.find_component("total_mass_flow") != None:
-            self.feed.total_mass_flow.deactivate()
-            self.feed.properties[0].flow_mass_phase_comp["Liq", "H2O"].fix()
+            if self.feed.find_component("total_mass_flow") != None:
+                self.feed.total_mass_flow.deactivate()
+                self.feed.properties[0].flow_mass_phase_comp["Liq", "H2O"].fix()
         assert degrees_of_freedom(self) == 0
 
     def get_model_state_dict(self):
@@ -344,8 +375,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                     0
                 ].conc_mass_phase_comp[phase, ion]
         model_state["Composition"]["pH"] = self.feed.pH
-        if self.config.alkalinity_as_CaCO3 is not None:
-            model_state["Composition"]["Alkalinity"] = self.feed.alkalinity_as_CaCO3
+        model_state["Composition"]["Alkalinity"] = self.feed.alkalinity_as_CaCO3
         model_state["Physical state"]["Temperature"] = self.feed.properties[
             0
         ].temperature

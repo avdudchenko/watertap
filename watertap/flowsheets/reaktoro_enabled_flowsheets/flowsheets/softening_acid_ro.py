@@ -64,7 +64,7 @@ import re
 def main():
     feed_water = "../water_sources/USDA_brackish.yaml"
     feed_water = "../water_sources/sample_500_hardness.yaml"
-    feed_water = "../water_sources/sample_1500_hardness.yaml"
+    # feed_water = "../water_sources/sample_1500_hardness.yaml"
     # feed_water = "../water_sources/Seawater.yaml"
     m = build_model(
         feed_water,
@@ -80,12 +80,12 @@ def main():
         solve_model(m)
         start = 70
     else:
-        start = 70
+        start = 50
     for r in range(start, 91, 1):
         m.fs.water_recovery.fix(r / 100)
         print(f"\n\n------------Solving for water recovery: {r}%------------")
         solve_model(m, tee=True)
-
+        report_all_units(m)
         print("------vars_close_to_bound-tests---------")
         print_variables_close_to_bounds(m)
         print("------constraints_close_to_bound-tests---------")
@@ -114,12 +114,17 @@ def enable_multi_process_reaktoro(
     )
 
     rkt_options = {}
+    opt = {
+        "hessian_type": rkt_hessian_type,
+        "bfgs_initialization_type": bfgs_initialization_type,
+    }
+    if bfgs_initialization_type == "constant":
+        opt["bfgs_init_const_hessian_value"] = 1e-16
+
     m.reaktoro_manager = ReaktoroBlockManager(
-        hessian_options={
-            "hessian_type": rkt_hessian_type,
-            "bfgs_initialization_type": bfgs_initialization_type,
-        },
+        hessian_options=opt,
     )
+
     rkt_options["reaktoro_block_manager"] = m.reaktoro_manager
     return rkt_options
 
@@ -128,7 +133,7 @@ def build_model(
     water_case,
     multi_process_reaktoro=True,
     hpro=False,
-    rkt_hessian_type="LBFGS",
+    rkt_hessian_type="BFGS",
     bfgs_initialization_type="GaussNewton",
     # rkt_scaling_type="variable_oi_scaling_square_sum",
 ):
@@ -166,11 +171,13 @@ def build_model(
         "hessian_options": {
             "hessian_type": rkt_hessian_type,
             "bfgs_initialization_type": bfgs_initialization_type,
-        },
+        }
         # "jacobian_options": {
         #     "scaling_type": rkt_scaling_type,
         # },
     }
+    if bfgs_initialization_type == "constant":
+        rkt_options["hessian_options"]["bfgs_init_const_hessian_value"] = 1e-16
     if multi_process_reaktoro:
         rkt_options = enable_multi_process_reaktoro(
             m, rkt_hessian_type, bfgs_initialization_type
@@ -178,6 +185,7 @@ def build_model(
         # rkt_options["jacobian_options"] = {
         #     "scaling_type": rkt_scaling_type,
         # }
+
     m.fs = FlowsheetBlock()
     m.fs.costing = WaterTAPCosting()
     m.fs.properties = MCASParameterBlock(**mcas_props)
@@ -313,7 +321,8 @@ def build_model(
     m.fs.costing.add_specific_energy_consumption(
         m.fs.product.product.properties[0].flow_vol
     )
-    m.fs.lcow_objective = Objective(expr=(m.fs.costing.LCOW))
+    # brackish  water cost is low, so lets scale it up
+    m.fs.lcow_objective = Objective(expr=m.fs.costing.LCOW)
     TransformationFactory("network.expand_arcs").apply_to(m)
     add_global_constraints(m)
     fix_and_scale(m)
@@ -394,18 +403,20 @@ def report_global_state(m):
 def fix_and_scale(m):
     for unit in m.flowsheet_unit_order:
         unit.fix_and_scale()
-
+    # limiiting maximum pH during optimization for
+    # stability - in all example waters, pH in softening does not really operate
+    # above 10, but ability of softening unit to go above 10 can cuase instability
+    # when alkalinitry drops bellow <20-25 ppm.
+    max_ph = 11
     iscale.calculate_scaling_factors(m)
     m.fs.softening_unit.precipitation_reactor.alkalinity.setlb(10)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setlb(5)
-    m.fs.acidification_unit.chemical_reactor.pH["outlet"].setub(10)
-    m.fs.ro_unit.ro_feed.pH.setlb(5)
-    m.fs.ro_unit.ro_feed.pH.setub(10)
+    m.fs.ro_unit.ro_feed.pH.setlb(6)
+    m.fs.ro_unit.ro_feed.pH.setub(max_ph)
     if m.fs.find_component("hp_pump_unit") is not None:
-        m.fs.hpro_unit.ro_feed.pH.setlb(5)
-        m.fs.hpro_unit.ro_feed.pH.setub(10)
-    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setlb(5)
-    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(10)
+        m.fs.hpro_unit.ro_feed.pH.setlb(6)
+        m.fs.hpro_unit.ro_feed.pH.setub(max_ph)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setlb(6)
+    m.fs.softening_unit.precipitation_reactor.pH["outlet"].setub(max_ph)
     assert degrees_of_freedom(m) == 0
 
 

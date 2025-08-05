@@ -152,7 +152,6 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             self.config.viable_reagents = ViableReagents()
         if self.config.viable_precipitants is None:
             self.config.viable_precipitants = ViablePrecipitants()
-
         self.selected_precipitants = {
             key: self.config.viable_precipitants[key]
             for key in self.config.selected_precipitants
@@ -458,7 +457,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                     sc = (sc**2 + (reagent_ions[ion] / 1000) ** 2) ** 0.5
                 scales.append(sc)
             # want maximum scale for limiting ion
-            precip_scale = max(scales)
+            precip_scale = max(scales) / 10
             mol_precip_scale = precip_scale
             mass_precip_scale = precip_scale / value(
                 value(
@@ -483,7 +482,9 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor
             )
             if self.config.add_alkalinity:
-                iscale.set_scaling_factor(self.precipitation_reactor.alkalinity, 1)
+                iscale.set_scaling_factor(
+                    self.precipitation_reactor.alkalinity, 1 / 100
+                )
         else:
             iscale.constraint_scaling_transform(self.eq_outlet_pH, 1 / 10)
         if self.config.add_hardness:

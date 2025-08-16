@@ -68,7 +68,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "add_reaktoro_chemistry",
         ConfigValue(
-            default=True,
+            default=False,
             description="To use Reaktoro-PSE for estimate pH change",
             doc="""
             If True, builds a reaktoro block and uses it to calculate change in pH due to the addition of given chemical. 
@@ -170,9 +170,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
 
             reaktoro_options["outputs"] = {"speciesAmount": True}
             reaktoro_options["build_graybox_model"] = False
-            reaktoro_options.update_with_user_options(
-                self.config.reaktoro_options.copy()
-            )
+            reaktoro_options.update_with_user_options(self.config.reaktoro_options)
 
             self.add_component(
                 f"{port}_speciation_block", ReaktoroBlock(**reaktoro_options)
@@ -203,7 +201,8 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
 
     def scale_before_initialization(self, **kwargs):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
-        iscale.set_scaling_factor(self.mixer.pH, 1 / 10)
+        for ph in self.mixer.pH:
+            iscale.set_scaling_factor(self.mixer.pH[ph], 1 / 10)
         if self.config.add_reaktoro_chemistry == False:
             iscale.constraint_scaling_transform(self.mixer.eq_pH, 1 / 10)
 
@@ -228,12 +227,23 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
                     for idx, obj in inlet_var.flow_mol_phase_comp.items():
                         obj.fix(ref_stream.flow_mol_phase_comp[idx].value * 1)
                         self.fixed_streams.append(obj)
-            # assert False
+                    self.mixer.pH[inlet].value = self.mixer.pH[
+                        f"{self.config.inlet_ports[0]}"
+                    ].value
+            self.mixer.mixed_state[0].temperature.value = self.mixer.find_component(
+                f"{self.config.inlet_ports[0]}_state"
+            )[0].temperature.value
             self.mixer_initialized = True
 
     def initialize_unit(self, **kwargs):
+        self.mixer.pH.display()
         self.initialize_streams()
+        self.mixer.pH.display()
+        self.mixer.pH.fix()
+        self.mixer.pH["outlet"].unfix()
         self.mixer.initialize()
+        self.mixer.pH.unfix()
+        self.mixer.pH.display()
         for obj in self.fixed_streams:
             obj.unfix()
         self.fixed_streams = []
@@ -271,5 +281,4 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             self.mixer.find_component("mixed_state")[0],
             self.mixer.pH["outlet"],
         )
-
         return self.name, model_state

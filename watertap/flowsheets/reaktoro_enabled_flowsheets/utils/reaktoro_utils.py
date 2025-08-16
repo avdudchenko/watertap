@@ -224,7 +224,12 @@ class ViableReagents(ViableReagentsBase):
 
 class ViablePrecipitantsBase(dict):
     def register_solid(
-        self, precipitant, mw, precipitation_stoichiometric, primary_ion
+        self,
+        precipitant,
+        mw,
+        precipitation_stoichiometric,
+        primary_ion,
+        reaktoro_modifier=None,
     ):
         """
         Add a new reagent to default list:
@@ -241,6 +246,7 @@ class ViablePrecipitantsBase(dict):
             "mw": mw,
             "precipitation_stoichiometric": precipitation_stoichiometric,
             "primary_ion": primary_ion,
+            "reaktoro_modifier": reaktoro_modifier,
         }
 
 

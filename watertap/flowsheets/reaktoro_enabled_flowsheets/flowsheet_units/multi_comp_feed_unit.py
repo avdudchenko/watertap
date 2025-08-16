@@ -218,14 +218,22 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
     def reaktoro_reconciliation(self):
         sub_model = ConcreteModel()
         sub_model.fs = FlowsheetBlock()
+
+        # create sub model for feed
         sub_model.fs.feed = Feed(property_package=self.config.default_property_package)
         sub_model.fs.feed.pH = Var(units=pyunits.dimensionless)
+        iscale.set_scaling_factor(sub_model.fs.feed.pH, 1 / 10)
         sub_model.fs.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
+        iscale.set_scaling_factor(sub_model.fs.feed.alkalinity_as_CaCO3, 1 / 10)
+        # set its conditions
         self.set_fixed_operation(alt_block=sub_model.fs.feed)
+
+        iscale.calculate_scaling_factors(sub_model)
+        # make sure we scale before solve
         sub_model.fs.feed.charge = Var(units=pyunits.dimensionless)
+        iscale.set_scaling_factor(sub_model.fs.feed.charge, 1)
         self.feed.charge = Var(units=pyunits.dimensionless)
-        sub_model.fs.feed.pH = Var(units=pyunits.dimensionless)
-        sub_model.fs.feed.pH.fix(self.feed.pH.value)
+        iscale.calculate_scaling_factors(sub_model.fs.feed)
         initial_con = value(
             pyunits.convert(
                 sub_model.fs.feed.properties[0].conc_mass_phase_comp[

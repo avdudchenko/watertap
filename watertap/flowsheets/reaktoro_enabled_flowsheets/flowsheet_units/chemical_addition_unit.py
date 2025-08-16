@@ -104,6 +104,12 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             property_package=self.config.default_property_package,
             reagent=self.selected_reagents,
         )
+        self.chemical_reactor.dissolution_reactor.properties_in[0].conc_mass_phase_comp[
+            ...
+        ]
+        self.chemical_reactor.dissolution_reactor.properties_out[
+            0
+        ].conc_mass_phase_comp[...]
         self.chemical_reactor.pH = Var(
             ["inlet", "outlet"],
             initialize=7,
@@ -257,7 +263,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 self.chemical_reactor
             )
             if self.config.add_alkalinity:
-                iscale.set_scaling_factor(self.chemical_reactor.alkalinity, 1 / 100)
+                iscale.set_scaling_factor(self.chemical_reactor.alkalinity, 1)
 
     def initialize_unit(self, **kwargs):
         self.chemical_reactor.initialize()

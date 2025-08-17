@@ -244,8 +244,6 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         )
 
         outputs = {("charge", None): sub_model.fs.feed.charge}
-
-        # if self.config.alkalinity_as_CaCO3 is not None:
         outputs[("alkalinityAsCaCO3", None)] = sub_model.fs.feed.alkalinity_as_CaCO3
 
         sub_model.fs.feed.properties[0].conc_mass_phase_comp[

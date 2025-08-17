@@ -562,7 +562,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
 
     def set_optimization_operation(self):
         """if we have reaktoro chemistry, we need to unfix the precipitate flow and reagent addition"""
-        if self.config.add_reaktoro_chemistry:
+        if (
+            self.config.add_reaktoro_chemistry
+            or self.config.add_non_eq_reaktoro_chemistry
+        ):
             for phase, data in self.selected_precipitants.items():
                 self.precipitation_reactor.flow_mol_precipitate[phase].unfix()
                 self.precipitation_reactor.flow_mass_precipitate[phase].unfix()

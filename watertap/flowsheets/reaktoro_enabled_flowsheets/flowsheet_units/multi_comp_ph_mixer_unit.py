@@ -236,14 +236,11 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             self.mixer_initialized = True
 
     def initialize_unit(self, **kwargs):
-        self.mixer.pH.display()
         self.initialize_streams()
-        self.mixer.pH.display()
         self.mixer.pH.fix()
         self.mixer.pH["outlet"].unfix()
         self.mixer.initialize()
         self.mixer.pH.unfix()
-        self.mixer.pH.display()
         for obj in self.fixed_streams:
             obj.unfix()
         self.fixed_streams = []

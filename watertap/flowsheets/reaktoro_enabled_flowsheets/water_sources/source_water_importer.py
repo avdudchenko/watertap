@@ -19,17 +19,15 @@ def get_source_water_data(file_location):
     # Creats dict with feed properties to pass into multi_comp_feed
     mass_comp_dict = get_feed_comp(data_dict)
     pH = float(data_dict["pH"])
-    mass_flowrate = data_dict.get("flow_mass") * pyunits.kg / pyunits.s
-    volumetric_flowrate = data_dict.get("volumetric_flowrate") * pyunits.L / pyunits.s
     feed_temperature = data_dict.get("temperature", 293.15)
     alkalinity = data_dict.get("alkalinity_as_CaCO3", None)
+    print("NERWCOW")
     if alkalinity != None:
         alkalinity = float(alkalinity) * pyunits.mg / pyunits.L
     feed_spec_dict = {
         "ion_concentrations": mass_comp_dict,
         "pH": pH,
         "temperature": feed_temperature,
-        "mass_flowrate": mass_flowrate,
         "volumetric_flowrate": volumetric_flowrate,
         "alkalinity_as_CaCO3": alkalinity,
     }

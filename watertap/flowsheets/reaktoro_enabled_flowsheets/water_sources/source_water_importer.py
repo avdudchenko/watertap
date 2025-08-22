@@ -35,7 +35,7 @@ def get_source_water_data(file_location):
             data_dict.get("flow_mass", None) * pyunits.kg / pyunits.s
         )
     if data_dict.get("volumetric_flowrate", None) is not None:
-        volumetric_flowrate = (
+        feed_spec_dict["volumetric_flowrate"] = (
             data_dict.get("volumetric_flowrate") * pyunits.L / pyunits.s
         )
     return mcas_param_dict, feed_spec_dict

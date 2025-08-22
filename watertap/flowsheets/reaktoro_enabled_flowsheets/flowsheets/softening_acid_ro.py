@@ -64,7 +64,7 @@ import re
 def main():
     feed_water = "../water_sources/USDA_brackish.yaml"
     feed_water = "../water_sources/sample_500_hardness.yaml"
-    # feed_water = "../water_sources/sample_1500_hardness.yaml"
+    feed_water = "../water_sources/sample_1500_hardness.yaml"
     # feed_water = "../water_sources/Seawater.yaml"
     m = build_model(
         feed_water,
@@ -469,13 +469,14 @@ def test_func(m, **kwargs):
     return True
 
 
-def solve_model(m, tee=False, **kwargs):
+def solve_model(m, tee=True, **kwargs):
     solver = get_cyipopt_watertap_solver(
         ma27=True,
         max_iter=1000,
         limited_memory=m.solver_limited_memory,
         scalar_type=m.solver_limited_memory_scalar,
     )
+    print(solver.options["linear_solver"])
     if m.fs.find_component("ipopt_iterations") is not None:
         tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
         tmp.close()

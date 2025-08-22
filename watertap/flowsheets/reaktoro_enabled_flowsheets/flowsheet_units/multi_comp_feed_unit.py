@@ -182,7 +182,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             block = alt_block
         for ion, value in self.config.ion_concentrations.items():
             block.properties[0].conc_mass_phase_comp["Liq", ion].fix(value)
-
+        print(self.config.volumetric_flowrate)
         if self.config.volumetric_flowrate is not None:
             block.properties[0].flow_vol_phase["Liq"].fix(
                 self.config.volumetric_flowrate

@@ -28,7 +28,6 @@ def get_source_water_data(file_location):
         "ion_concentrations": mass_comp_dict,
         "pH": pH,
         "temperature": feed_temperature,
-        "volumetric_flowrate": volumetric_flowrate,
         "alkalinity_as_CaCO3": alkalinity,
     }
     if data_dict.get("flow_mass", None) is not None:

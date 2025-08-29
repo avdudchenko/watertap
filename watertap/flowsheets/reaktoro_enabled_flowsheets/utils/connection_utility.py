@@ -69,6 +69,7 @@ class ConnectionContainer:
         self.registered_arc = outlet.unit_block_reference.find_component(
             f"{outlet.name}_to_{inlet.name}"
         )
+        self.unit_connection = f"{outlet.unit_block_reference}.{outlet.name}_to_{inlet.unit_block_reference}.{inlet.name}"
 
     def build_constraints(self, outlet, inlet):
         """

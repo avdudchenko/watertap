@@ -84,7 +84,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "use_bulkcomp_for_effluent_pH",
         ConfigValue(
-            default=True,
+            default=False,
             description="Builds a separate reaktoro block for estimating effluent pH",
             doc="""
             If True, builds a second reaktoro block just for estimating effluent pH based on bulk composition of feed in final node. 
@@ -129,7 +129,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "add_alkalinity",
         ConfigValue(
-            default=True,
+            default=False,
             description="Defines if to add alkalinity to Reaktoro output",
             doc="""
                 Defines if to add alkalinity to Reaktoro output, this will use Reaktoro to calculate alkalinity
@@ -182,7 +182,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_retentate.pH = Var(
             initialize=7, bounds=(0, 13), units=pyunits.dimensionless
         )
-        self.ro_unit.interface_pH = Var(
+        self.ro_interface_pH = Var(
             initialize=7, bounds=(0, 13), units=pyunits.dimensionless
         )
         self.ro_product.pH = Var(
@@ -442,7 +442,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
     def add_reaktoro_chemistry(self):
         """add water removal constraint, and relevant reaktoro block"""
 
-        outputs = {("pH", None): self.ro_unit.interface_pH}
+        outputs = {("pH", None): self.ro_interface_pH}
         for scalant in self.ro_unit.scaling_tendency:
             outputs[("scalingTendency", scalant)] = self.ro_unit.scaling_tendency[
                 scalant
@@ -483,8 +483,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.scaling_block = ReaktoroBlock(**self.reaktoro_options)
         if self.config.use_bulkcomp_for_effluent_pH == False:
-            self.ro_unit.eq_bulk_interface_ph = Constraint(
-                expr=self.ro_retentate.pH == self.ro_unit.interface_pH
+            self.eq_bulk_interface_ph = Constraint(
+                expr=self.ro_retentate.pH == self.ro_interface_pH
             )
         else:
             outputs = {("pH", None): self.ro_retentate.pH}
@@ -580,7 +580,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ro_feed.pH, 1 / 10)
         iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 10)
         iscale.set_scaling_factor(self.ro_product.pH, 1 / 10)
-        iscale.set_scaling_factor(self.ro_unit.interface_pH, 1 / 10)
+        iscale.set_scaling_factor(self.ro_interface_pH, 1 / 10)
         # scale monotone cp constraint if it exists
         if self.ro_unit.find_component("monotone_cp_constraint") is not None:
             for eq in self.ro_unit.monotone_cp_constraint:
@@ -668,9 +668,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ro_unit.length, 1 / self.ro_unit.length.value)
 
         if self.config.use_bulkcomp_for_effluent_pH == False:
-            iscale.constraint_scaling_transform(
-                self.ro_unit.eq_bulk_interface_ph, 1 / 10
-            )
+            iscale.constraint_scaling_transform(self.eq_bulk_interface_ph, 1 / 10)
 
     def get_default_scaling_factors(self):
         """returns scale for ro property package and default property package"""
@@ -747,7 +745,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 self.bulk_ph_block.initialize()
                 self.bulk_ph_block.display_jacobian_scaling()
             else:
-                self.ro_retentate.pH.value = self.ro_unit.interface_pH.value
+                self.ro_retentate.pH.value = self.ro_interface_pH.value
 
     def get_model_state_dict(self):
         """Returns a dictionary with the model state"""
@@ -824,7 +822,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 model_state_dict["Maximum scaling potential"][scalant] = (
                     self.ro_unit.maximum_scaling_tendency[scalant]
                 )
-            model_state_dict["Interface pH"] = self.ro_unit.interface_pH
+            model_state_dict["Interface pH"] = self.ro_interface_pH
             if (
                 self.config.add_alkalinity != False
                 and self.ro_unit.find_component("alkalinity") is not None

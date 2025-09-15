@@ -107,6 +107,16 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         ),
     )
     CONFIG.declare(
+        "pE",
+        ConfigValue(
+            default=None,
+            description="pE of feed",
+            doc="""
+                Provide feed pE, specify either a float value, or True (bool) to have Reaktoro reconcile it for you. 
+            """,
+        ),
+    )
+    CONFIG.declare(
         "alkalinity_as_CaCO3",
         ConfigValue(
             default=None,
@@ -167,8 +177,15 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         self.feed.pH = Var(
             initialize=self.config.pH, bounds=(0, 13), units=pyunits.dimensionless
         )
-        self.register_port("outlet", self.feed.outlet, {"pH": self.feed.pH})
-        # if self.config.alkalinity_as_CaCO3 is not None:
+        fs_vars = {"pH": self.feed.pH}
+        if self.config.pE is not None and self.config.pE != False:
+            self.feed.pE = Var(
+                initialize=1,
+                bounds=(None, None),
+                units=pyunits.dimensionless,
+            )
+            fs_vars["pE"] = self.feed.pE
+        self.register_port("outlet", self.feed.outlet, fs_vars)
         self.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
         self.feed.alkalinity_as_CaCO3.fix()
         if self.config.alkalinity_as_CaCO3 is not None:
@@ -182,7 +199,6 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             block = alt_block
         for ion, value in self.config.ion_concentrations.items():
             block.properties[0].conc_mass_phase_comp["Liq", ion].fix(value)
-        print(self.config.volumetric_flowrate)
         if self.config.volumetric_flowrate is not None:
             block.properties[0].flow_vol_phase["Liq"].fix(
                 self.config.volumetric_flowrate
@@ -200,6 +216,10 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             block.properties[0].flow_mass_phase_comp[
                 "Liq", "H2O"
             ] = self.config.mass_flowrate  # approximate
+        if self.config.pE is not None and isinstance(self.config.pE, bool) == False:
+            block.pE.fix(self.config.pE)
+        elif self.config.pE == True:
+            block.pE.fix()
         block.properties[0].pressure.fix(self.config.pressure)
         block.properties[0].temperature.fix(self.config.temperature)
         block.pH.fix(self.config.pH)
@@ -213,6 +233,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             solver = get_solver()
         result = solver.solve(block, tee=False)
         assert_optimal_termination(result)
+        self.feed.display()
         assert degrees_of_freedom(block) == 0
 
     def reaktoro_reconciliation(self):
@@ -223,6 +244,13 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         sub_model.fs.feed = Feed(property_package=self.config.default_property_package)
         sub_model.fs.feed.pH = Var(units=pyunits.dimensionless)
         iscale.set_scaling_factor(sub_model.fs.feed.pH, 1 / 10)
+        if self.config.pE is not None and self.config.pE is True:
+            sub_model.fs.feed.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+            )
+            sub_model.fs.feed.pE.fix()
+            iscale.set_scaling_factor(sub_model.fs.feed.pE, 1 / 10)
         sub_model.fs.feed.alkalinity_as_CaCO3 = Var(units=pyunits.mg / pyunits.L)
         iscale.set_scaling_factor(sub_model.fs.feed.alkalinity_as_CaCO3, 1 / 10)
         # set its conditions
@@ -244,11 +272,15 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         )
 
         outputs = {("charge", None): sub_model.fs.feed.charge}
-        outputs[("alkalinityAsCaCO3", None)] = sub_model.fs.feed.alkalinity_as_CaCO3
 
+        outputs[("alkalinityAsCaCO3", None)] = sub_model.fs.feed.alkalinity_as_CaCO3
+        if self.config.pE is not None and self.config.pE is True:
+            outputs[("pE", None)] = sub_model.fs.feed.pE
+            sub_model.fs.feed.pE.unfix()
         sub_model.fs.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].unfix()
+
         reaktoro_options = ReaktoroOptionsContainer()
         reaktoro_options.system_state_option(
             "temperature",
@@ -259,6 +291,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             sub_model.fs.feed.properties[0].pressure,
         )
         reaktoro_options.system_state_option("pH", sub_model.fs.feed.pH)
+        if self.config.pE is not None and isinstance(self.config.pE, bool) == False:
+            reaktoro_options.system_state_option("pE", sub_model.fs.feed.pE)
         reaktoro_options.aqueous_phase_option(
             "composition",
             sub_model.fs.feed.properties[0].flow_mol_phase_comp,
@@ -297,6 +331,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
         solver = get_cyipopt_watertap_solver()
         _log.info("Reconciling feed with reaktoro")
         result = solver.solve(sub_model.fs.feed, tee=True)
+        if self.config.pE is not None and self.config.pE is True:
+            sub_model.fs.feed.pE.fix()
         assert_optimal_termination(result)
 
         def replace_name(name, old_model, new_model):
@@ -327,7 +363,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             f"Increased {self.config.charge_balance_ion} from {initial_con} to {balanced_con} g/L)"
         )
         _log.info(f"Reconciled alkalinity is {self.feed.alkalinity_as_CaCO3.value}")
-
+        if self.config.pE is not None and self.config.pE is True:
+            _log.info(f"Reconciled pE is {self.feed.pE.value}")
         self.feed.properties[0].conc_mass_phase_comp[
             "Liq", self.config.charge_balance_ion
         ].fix()
@@ -339,12 +376,14 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                 )
         self.feed.alkalinity_as_CaCO3.fix()
         solver.solve(self.feed, tee=False)
-        _log.info("Report complete")
+        _log.info(f"Report complete: DOFs {degrees_of_freedom(self)}")
         assert_optimal_termination(result)
         assert degrees_of_freedom(self) == 0
 
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.feed.pH, 1 / 10)
+        if self.find_component("pE") is not None:
+            iscale.set_scaling_factor(self.feed.pE, 1 / 10)
         self.scale_feed()
 
     def scale_feed(self):
@@ -381,6 +420,8 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
                     0
                 ].conc_mass_phase_comp[phase, ion]
         model_state["Composition"]["pH"] = self.feed.pH
+        if self.config.pE is not None and self.config.pE != False:
+            model_state["Composition"]["pE"] = self.feed.pE
         model_state["Composition"]["Alkalinity"] = self.feed.alkalinity_as_CaCO3
         model_state["Physical state"]["Temperature"] = self.feed.properties[
             0

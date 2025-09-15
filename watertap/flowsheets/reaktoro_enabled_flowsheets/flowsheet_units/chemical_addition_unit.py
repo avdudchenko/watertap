@@ -90,6 +90,16 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -116,22 +126,26 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             units=pyunits.dimensionless,
             bounds=(0, 13),
         )
+        if self.config.track_pE:
+            self.chemical_reactor.pE = Var(
+                ["inlet", "outlet"],
+                initialize=7,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
         if self.config.default_costing_package is not None:
             self.chemical_reactor.costing = UnitModelCostingBlock(
                 flowsheet_costing_block=self.config.default_costing_package,
                 **self.config.default_costing_package_kwargs,
             )
 
-            self.chemical_reactor.reagent_cost = Param(
+            self.chemical_reactor.reagent_cost = Var(
                 list(self.selected_reagents.keys()),
                 units=self.config.default_costing_package.base_currency / pyunits.kg,
-                mutable=True,
                 domain=Reals,
             )
             for reagent, reagent_config in self.selected_reagents.items():
-                self.chemical_reactor.reagent_cost[reagent].set_value(
-                    reagent_config["cost"]
-                )
+                self.chemical_reactor.reagent_cost[reagent].fix(reagent_config["cost"])
 
                 self.config.default_costing_package.register_flow_type(
                     f"{self.name}_reagent_{reagent}".replace(".", "_"),
@@ -149,15 +163,27 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 expr=self.chemical_reactor.pH["inlet"]
                 == self.chemical_reactor.pH["outlet"]
             )
+            if self.chemical_reactor.find_component("pE") is not None:
+                self.chemical_reactor.eq_pE = Constraint(
+                    expr=self.chemical_reactor.pE["inlet"]
+                    == self.chemical_reactor.pE["outlet"]
+                )
+        output_vars = {"pH": self.chemical_reactor.pH["outlet"]}
+        if self.config.track_pE:
+            output_vars["pE"] = self.chemical_reactor.pE["outlet"]
+        input_vars = {"pH": self.chemical_reactor.pH["inlet"]}
+        if self.config.track_pE:
+            input_vars["pE"] = self.chemical_reactor.pE["inlet"]
+
         self.register_port(
             "inlet",
             self.chemical_reactor.inlet,
-            {"pH": self.chemical_reactor.pH["inlet"]},
+            input_vars,
         )
         self.register_port(
             "outlet",
             self.chemical_reactor.outlet,
-            {"pH": self.chemical_reactor.pH["outlet"]},
+            output_vars,
         )
 
     def add_reaktoro_chemistry(self):
@@ -175,6 +201,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
                 reagents[solvent] = self.chemical_reactor.flow_mol_solvent[solvent]
 
         outputs = {("pH", None): self.chemical_reactor.pH["outlet"]}
+        if self.config.track_pE:
+            outputs[("pE", None)] = self.chemical_reactor.pE["outlet"]
         if self.config.add_alkalinity:
             self.chemical_reactor.alkalinity = Var(
                 initialize=1,
@@ -194,6 +222,10 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options.system_state_option(
             "pH", self.chemical_reactor.pH["inlet"]
         )
+        if self.config.track_pE:
+            self.reaktoro_options.system_state_option(
+                "pE", self.chemical_reactor.pE["inlet"]
+            )
         self.reaktoro_options.aqueous_phase_option(
             "composition",
             self.chemical_reactor.dissolution_reactor.properties_in[
@@ -256,7 +288,8 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             iscale.set_scaling_factor(
                 self.chemical_reactor.reagent_dose[reagent], dose_scale
             )
-
+        if self.chemical_reactor.find_component("pE") is not None:
+            iscale.set_scaling_factor(self.chemical_reactor.pE, 1 / 10)
         iscale.set_scaling_factor(self.chemical_reactor.pH, 1 / 10)
         if self.config.add_reaktoro_chemistry:
             self.config.viable_reagents.scale_solvent_vars_and_constraints(
@@ -274,16 +307,24 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             self.chemical_reactor.initialize()
 
     def get_model_state_dict(self):
-        def get_ion_comp(stream, pH):
+        def get_ion_comp(stream, pH, pE=None):
             data_dict = OrderedDict()
             data_dict["Mass flow of H2O"] = stream.flow_mass_phase_comp["Liq", "H2O"]
             for phase, ion in stream.conc_mass_phase_comp:
                 if ion != "H2O":
                     data_dict[ion] = stream.conc_mass_phase_comp[phase, ion]
             data_dict["pH"] = pH
+            if pE is not None:
+                data_dict["pE"] = pE
             data_dict["Temperature"] = stream.temperature
             data_dict["Pressure"] = stream.pressure
             return data_dict
+
+        def get_pe(port):
+            if self.config.track_pE:
+                return self.chemical_reactor.pE[port]
+            else:
+                return None
 
         self.inlet.fix()
         unit_dofs = degrees_of_freedom(self)
@@ -291,6 +332,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
         treated_state = get_ion_comp(
             self.chemical_reactor.dissolution_reactor.properties_out[0],
             self.chemical_reactor.pH["outlet"],
+            get_pe("outlet"),
         )
         if (
             self.config.add_alkalinity != False
@@ -304,6 +346,7 @@ class ChemicalAdditionUnitData(WaterTapFlowsheetBlockData):
             "Inlet state": get_ion_comp(
                 self.chemical_reactor.dissolution_reactor.properties_in[0],
                 self.chemical_reactor.pH["inlet"],
+                get_pe("inlet"),
             ),
             "Chemical dosing:": self.chemical_reactor.reagent_dose,
             "Chemical mass flow:": self.chemical_reactor.flow_mass_reagent,

@@ -471,7 +471,7 @@ def test_func(m, **kwargs):
 
 def solve_model(m, tee=True, **kwargs):
     solver = get_cyipopt_watertap_solver(
-        ma27=True,
+        linear_solver="ma27",
         max_iter=1000,
         limited_memory=m.solver_limited_memory,
         scalar_type=m.solver_limited_memory_scalar,

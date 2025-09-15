@@ -12,7 +12,7 @@
 
 # Import Pyomo libraries
 from pyomo.environ import (
-    Param,
+    Var,
     Constraint,
     units as pyunits,
 )
@@ -20,14 +20,13 @@ from ..util import register_costing_parameter_block, make_capital_cost_var
 
 
 def build_stoichiometric_reactor_cost_param_block(blk):
-    blk.capital_cost_softening = Param(
+    blk.capital_cost_softening = Var(
         initialize=374.9,
         units=pyunits.USD_2021 / (pyunits.lb / pyunits.day),
-        mutable=True,
         doc="Cost for typical mid sized softening reactor",
     )
 
-    blk.capital_cost_acid_addition = Param(
+    blk.capital_cost_acid_addition = Var(
         initialize=127.8,
         units=pyunits.USD_2021 / (pyunits.gallon / pyunits.day),
         doc="Cost for acid mixer",

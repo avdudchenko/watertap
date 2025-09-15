@@ -162,6 +162,16 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -212,20 +222,27 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             units=pyunits.dimensionless,
             bounds=(0, 13),
         )
+        if self.config.track_pE:
+            self.precipitation_reactor.pE = Var(
+                ["inlet", "outlet"],
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
         if self.config.default_costing_package is not None:
             self.precipitation_reactor.costing = UnitModelCostingBlock(
                 flowsheet_costing_block=self.config.default_costing_package,
                 **self.config.default_costing_package_kwargs,
             )
 
-            self.precipitation_reactor.reagent_cost = Param(
+            self.precipitation_reactor.reagent_cost = Var(
                 list(self.selected_reagents.keys()),
                 units=self.config.default_costing_package.base_currency / pyunits.kg,
-                mutable=True,
+                # mutable=True,
                 domain=Reals,
             )
             for reagent, reagent_config in self.selected_reagents.items():
-                self.precipitation_reactor.reagent_cost[reagent].set_value(
+                self.precipitation_reactor.reagent_cost[reagent].fix(
                     reagent_config["cost"]
                 )
 
@@ -244,30 +261,40 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         elif self.config.add_non_eq_reaktoro_chemistry:
             self.add_non_eq_reaktoro_chemistry()
         else:
-            self.build_equality_ph_constraints()
+            self.build_equality_ph_pe_constraints()
         if self.config.add_hardness:
             self.add_hardness()
+        inlet_vars = {"pH": self.precipitation_reactor.pH["inlet"]}
+        outlet_vars = {"pH": self.precipitation_reactor.pH["outlet"]}
+        if self.config.track_pE:
+            inlet_vars["pE"] = self.precipitation_reactor.pE["inlet"]
+            outlet_vars["pE"] = self.precipitation_reactor.pE["outlet"]
         self.register_port(
             "inlet",
             self.precipitation_reactor.inlet,
-            {"pH": self.precipitation_reactor.pH["inlet"]},
+            inlet_vars,
         )
         self.register_port(
             "outlet",
             self.precipitation_reactor.outlet,
-            {"pH": self.precipitation_reactor.pH["outlet"]},
+            outlet_vars,
         )
         self.register_port(
             "sludge",
             self.precipitation_reactor.waste,
-            {"pH": self.precipitation_reactor.pH["outlet"]},
+            outlet_vars,
         )
 
-    def build_equality_ph_constraints(self):
+    def build_equality_ph_pe_constraints(self):
         self.eq_outlet_pH = Constraint(
             expr=self.precipitation_reactor.pH["inlet"]
             == self.precipitation_reactor.pH["outlet"]
         )
+        if self.config.track_pE:
+            self.eq_outlet_pE = Constraint(
+                expr=self.precipitation_reactor.pE["inlet"]
+                == self.precipitation_reactor.pE["outlet"]
+            )
 
     def add_sludge_mass_estimation(self):
         sludge_components = []
@@ -334,7 +361,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             for solvent in solvents:
                 reagents[solvent] = self.precipitation_reactor.flow_mol_solvent[solvent]
         self.rkt_block_outputs = {("pH", None): self.precipitation_reactor.pH["outlet"]}
-
+        if self.config.track_pE:
+            self.rkt_block_outputs[("pE", None)] = self.precipitation_reactor.pE[
+                "outlet"
+            ]
         for (
             phase,
             obj,
@@ -363,6 +393,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options.system_state_option(
             "pH", self.precipitation_reactor.pH["inlet"]
         )
+        if self.config.track_pE:
+            self.reaktoro_options.system_state_option(
+                "pE", self.precipitation_reactor.pE["inlet"]
+            )
         self.reaktoro_options.aqueous_phase_option(
             "composition",
             self.precipitation_reactor.dissolution_reactor.properties_in[
@@ -383,12 +417,12 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
 
     def add_non_eq_reaktoro_chemistry(self):
 
-        self.precipitation_reactor.scaling_tendency = Var(
-            ["non_eq_reactor", "maximum"],
-            self.selected_precipitants,
-            initialize=1,
-            units=pyunits.dimensionless,
-        )
+        # self.precipitation_reactor.scaling_tendency = Var(
+        #     ["non_eq_reactor", "maximum"],
+        #     self.selected_precipitants,
+        #     initialize=1,
+        #     units=pyunits.dimensionless,
+        # )
         self.precipitation_reactor.non_eq_flow_mol_precipitate = Var(
             self.selected_precipitants,
             initialize=1,
@@ -433,6 +467,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 None,
             ): self.precipitation_reactor.pH["outlet"]
         }
+        if self.config.track_pE:
+            self.non_eq_rkt_outputs[("pE", None)] = self.precipitation_reactor.pE[
+                "outlet"
+            ]
         self.eq_rkt_outputs = {("pH", None): self.precipitation_reactor.eq_pH}
         if self.config.add_alkalinity:
             self.precipitation_reactor.alkalinity = Var(
@@ -453,10 +491,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
             self.eq_rkt_outputs[("speciesAmount", phase)] = (
                 self.precipitation_reactor.non_eq_flow_mol_precipitate[phase]
             )
-            self.non_eq_rkt_outputs[("scalingTendency", phase)] = (
-                self.precipitation_reactor.scaling_tendency["non_eq_reactor", phase]
-            )
-            self.precipitation_reactor.scaling_tendency["maximum", phase].fix(1)
+            # self.non_eq_rkt_outputs[("scalingTendency", phase)] = (
+            #     self.precipitation_reactor.scaling_tendency["non_eq_reactor", phase]
+            # )
+            # self.precipitation_reactor.scaling_tendency["maximum", phase].fix(1)
             chem_modifier_for_solids[f"precipitation_{phase}"] = (
                 self.selected_precipitants[phase]["reaktoro_modifier"]
             )
@@ -473,6 +511,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         reaktoro_options.system_state_option(
             "pH", self.precipitation_reactor.pH["inlet"]
         )
+        if self.config.track_pE:
+            reaktoro_options.system_state_option(
+                "pE", self.precipitation_reactor.pE["inlet"]
+            )
         reaktoro_options["mineral_phase"] = {
             "phase_components": list(self.selected_precipitants.keys())
         }
@@ -501,6 +543,10 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         non_eq_reaktoro_options.system_state_option(
             "pH", self.precipitation_reactor.pH["inlet"]
         )
+        if self.config.track_pE:
+            reaktoro_options.system_state_option(
+                "pE", self.precipitation_reactor.pE["inlet"]
+            )
         non_eq_reaktoro_options.aqueous_phase_option(
             "composition",
             self.precipitation_reactor.dissolution_reactor.properties_in[
@@ -665,20 +711,21 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 )
 
         iscale.set_scaling_factor(self.precipitation_reactor.pH, 1 / 10)
-
+        if self.config.track_pE:
+            iscale.set_scaling_factor(self.precipitation_reactor.pE, 1 / 10)
         if self.config.add_non_eq_reaktoro_chemistry:
             iscale.set_scaling_factor(self.precipitation_reactor.eq_pH, 1 / 10)
-            for phase in self.selected_precipitants:
-                iscale.set_scaling_factor(
-                    self.precipitation_reactor.scaling_tendency[
-                        "non_eq_reactor", phase
-                    ],
-                    1,
-                )
-                iscale.set_scaling_factor(
-                    self.precipitation_reactor.scaling_tendency["maximum", phase],
-                    1,
-                )
+            # for phase in self.selected_precipitants:
+            #     iscale.set_scaling_factor(
+            #         self.precipitation_reactor.scaling_tendency[
+            #             "non_eq_reactor", phase
+            #         ],
+            #         1,
+            #     )
+            #     iscale.set_scaling_factor(
+            #         self.precipitation_reactor.scaling_tendency["maximum", phase],
+            #         1,
+            #     )
         if (
             self.config.add_reaktoro_chemistry
             or self.config.add_non_eq_reaktoro_chemistry
@@ -690,6 +737,8 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 iscale.set_scaling_factor(self.precipitation_reactor.alkalinity, 1)
         else:
             iscale.constraint_scaling_transform(self.eq_outlet_pH, 1 / 10)
+            if self.config.track_pE:
+                iscale.constraint_scaling_transform(self.eq_outlet_pE, 1 / 10)
         if self.config.add_hardness:
             iscale.set_scaling_factor(self.precipitation_reactor.hardness["Ca"], 1)
             iscale.set_scaling_factor(self.precipitation_reactor.hardness["Mg"], 1)
@@ -743,22 +792,33 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                 self.precipitation_reactor.precipitation_limited_reaction.activate()
 
     def get_model_state_dict(self):
-        def get_ion_comp(stream, pH):
+        def get_ion_comp(stream, pH, pE=None):
             data_dict = OrderedDict()
             data_dict["Mass flow of H2O"] = stream.flow_mass_phase_comp["Liq", "H2O"]
             for phase, ion in stream.conc_mass_phase_comp:
                 if ion != "H2O":
                     data_dict[ion] = stream.conc_mass_phase_comp[phase, ion]
             data_dict["pH"] = pH
+            if pE is not None:
+                data_dict["pE"] = pE
             data_dict["Temperature"] = stream.temperature
             data_dict["Pressure"] = stream.pressure
             return data_dict
 
+        def get_pe(port):
+            if self.config.track_pE:
+                return self.precipitation_reactor.pE[port]
+            else:
+                return None
+
         unit_dofs = degrees_of_freedom(self)
+
         treated_state = get_ion_comp(
             self.precipitation_reactor.precipitation_reactor.properties_out[0],
             self.precipitation_reactor.pH["outlet"],
+            get_pe("outlet"),
         )
+
         if (
             self.config.add_alkalinity != False
             and self.precipitation_reactor.find_component("alkalinity") is not None

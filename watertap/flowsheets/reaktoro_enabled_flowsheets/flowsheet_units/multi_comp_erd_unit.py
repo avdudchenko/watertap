@@ -43,6 +43,16 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         """Build a multi-component ERD unit model"""
@@ -58,9 +68,17 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         # Add ERD flow rate
         self.ERD.control_volume.properties_in[0].flow_vol_phase[...]
         self.ERD.pH = Var(initialize=7, bounds=(0, 13), units=pyunits.dimensionless)
-
-        self.register_port("inlet", self.ERD.inlet, {"pH": self.ERD.pH})
-        self.register_port("outlet", self.ERD.outlet, {"pH": self.ERD.pH})
+        tracked_vars = {"pH": self.ERD.pH}
+        if self.config.track_pE:
+            self.ERD.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            tracked_vars["pE"] = self.ERD.pE
+        iscale.set_scaling_factor(self.ERD.pH, 1 / 10)
+        self.register_port("inlet", self.ERD.inlet, tracked_vars)
+        self.register_port("outlet", self.ERD.outlet, tracked_vars)
 
     def set_fixed_operation(self):
         """fixes operation point for ERD unit model
@@ -76,6 +94,8 @@ class MultiCompERDUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ERD.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.ERD.control_volume.work, 1e-4)
         iscale.set_scaling_factor(self.ERD.pH, 1 / 10)
+        if self.config.track_pE:
+            iscale.set_scaling_factor(self.ERD.pE, 1 / 10)
 
     def initialize_unit(self):
         self.ERD.initialize()

@@ -6,6 +6,7 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
 from idaes.core.util.model_statistics import degrees_of_freedom
 from pyomo.environ import (
     Var,
+    value,
     units as pyunits,
 )
 from pyomo.common.config import ConfigValue
@@ -47,7 +48,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "osmotic_pressure_offset",
         ConfigValue(
-            default=2e5,
+            default=2e5 * pyunits.Pa,
             description="Offset for osmotic pressure ",
             doc="""
             Sets an fixed offset of guessed initial pressure
@@ -57,7 +58,7 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
     CONFIG.declare(
         "maximum_pressure",
         ConfigValue(
-            default=300e5,
+            default=300e5 * pyunits.Pa,
             description="Maximum pressure for pump unit",
             doc="""
             Sets the maximum pressure for the pump unit
@@ -74,6 +75,16 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         """Build a multi-component pump unit model"""
@@ -86,9 +97,16 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         # Add pump flow rate
         self.pump.control_volume.properties_in[0].flow_vol_phase[...]
         self.pump.pH = Var(initialize=7, bounds=(0, 13), units=pyunits.dimensionless)
-
-        self.register_port("inlet", self.pump.inlet, {"pH": self.pump.pH})
-        self.register_port("outlet", self.pump.outlet, {"pH": self.pump.pH})
+        tracked_vars = {"pH": self.pump.pH}
+        if self.config.track_pE:
+            self.pump.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            tracked_vars["pE"] = self.pump.pE
+        self.register_port("inlet", self.pump.inlet, tracked_vars)
+        self.register_port("outlet", self.pump.outlet, tracked_vars)
 
     def set_fixed_operation(self):
         """fixes operation point for pump unit model
@@ -97,13 +115,26 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         if self.config.initialization_pressure is "osmotic_pressure":
             init_flags = self.pump.control_volume.initialize()
             self.pump.control_volume.release_state(init_flags)
-            self.pump.outlet.pressure[0].fix(
-                self.pump.control_volume.properties_in[0]
-                .pressure_osm_phase["Liq"]
-                .value
+            pressure_guess = value(
+                self.pump.control_volume.properties_in[0].pressure_osm_phase["Liq"]
                 * self.config.osmotic_over_pressure
                 + self.config.osmotic_pressure_offset
             )
+
+            print(
+                pressure_guess,
+                value(
+                    pyunits.convert(self.config.maximum_pressure, to_units=pyunits.Pa)
+                ),
+            )
+            if pressure_guess > value(
+                pyunits.convert(self.config.maximum_pressure, to_units=pyunits.Pa)
+            ):
+                pressure_guess = value(
+                    pyunits.convert(self.config.maximum_pressure, to_units=pyunits.Pa)
+                    * 0.999
+                )
+            self.pump.outlet.pressure[0].fix(pressure_guess)
         else:
             self.pump.outlet.pressure[0].fix(self.config.initialization_pressure)
         self.pump.outlet.pressure[0].setub(self.config.maximum_pressure)
@@ -119,6 +150,8 @@ class MultiCompPumpUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.pump.outlet.pressure, 1e-5)
         iscale.set_scaling_factor(self.pump.control_volume.work, 1e-4)
         iscale.set_scaling_factor(self.pump.pH, 1 / 10 / 10)
+        if self.config.track_pE:
+            iscale.set_scaling_factor(self.pump.pE, 1 / 10)
 
     def initialize_unit(self):
         self.set_fixed_operation()

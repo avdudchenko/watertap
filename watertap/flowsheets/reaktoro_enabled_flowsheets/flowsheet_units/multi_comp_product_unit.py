@@ -14,6 +14,7 @@ from watertap.flowsheets.reaktoro_enabled_flowsheets.utils.watertap_flowsheet_bl
     WaterTapFlowsheetBlockData,
 )
 
+from pyomo.common.config import ConfigValue
 import idaes.core.util.scaling as iscale
 
 __author__ = "Alexander Dudchenko"
@@ -22,6 +23,16 @@ __author__ = "Alexander Dudchenko"
 @declare_process_block_class("MultiCompProduct")
 class MultiCompProductData(WaterTapFlowsheetBlockData):
     CONFIG = WaterTapFlowsheetBlockData.CONFIG()
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -29,12 +40,23 @@ class MultiCompProductData(WaterTapFlowsheetBlockData):
         self.product = Product(property_package=self.config.default_property_package)
 
         self.product.pH = Var(initialize=7, bounds=(0, 13), units=pyunits.dimensionless)
-        self.register_port("inlet", self.product.inlet, {"pH": self.product.pH})
+        inlet_vars = {"pH": self.product.pH}
+        if self.config.track_pE:
+            self.product.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            inlet_vars["pE"] = self.product.pE
+
+        self.register_port("inlet", self.product.inlet, inlet_vars)
         self.product.properties[0].conc_mass_phase_comp[...]
         self.product.properties[0].flow_mass_phase_comp[...]
 
     def scale_before_initialization(self, **kwargs):
         iscale.set_scaling_factor(self.product.pH, 1 / 10)
+        if self.config.track_pE:
+            iscale.set_scaling_factor(self.product.pE, 1 / 10)
 
     def initialize_unit(self, solver=None, tee=True):
         self.product.initialize()

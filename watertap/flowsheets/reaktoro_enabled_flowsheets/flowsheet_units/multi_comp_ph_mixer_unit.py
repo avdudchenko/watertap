@@ -11,7 +11,6 @@ from pyomo.environ import (
     Constraint,
     units as pyunits,
 )
-import math
 from pyomo.common.config import ConfigValue
 from idaes.models.unit_models import Mixer
 from idaes.models.unit_models.mixer import MomentumMixingType, MixingType
@@ -21,8 +20,6 @@ from idaes.core import (
 import idaes.core.util.scaling as iscale
 from reaktoro_pse.reaktoro_block import ReaktoroBlock
 from collections import OrderedDict
-
-from pyomo.util.calc_var_value import calculate_variable_from_constraint
 
 __author__ = "Alexander Dudchenko"
 
@@ -85,6 +82,16 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -106,7 +113,13 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             units=pyunits.dimensionless,
             bounds=(0, 13),
         )
-
+        if self.config.track_pE:
+            self.mixer.pE = Var(
+                all_ports,
+                initialize=7,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
         if self.config.add_reaktoro_chemistry:
             self.add_reaktoro_chemistry()
         else:
@@ -114,35 +127,92 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             self.mixer.eq_pH = Constraint(
                 expr=sum(
                     self.mixer.pH[port]
-                    * self.mixer.find_component(f"{port}_state")[0].flow_vol_phase[
-                        "Liq"
-                    ]
+                    * sum(
+                        self.mixer.find_component(f"{port}_state")[
+                            0
+                        ].flow_mass_phase_comp[ion]
+                        for ion in self.mixer.find_component(f"{port}_state")[
+                            0
+                        ].flow_mass_phase_comp
+                    )
                     for port in self.config.inlet_ports
                 )
-                / self.mixer.find_component("mixed_state")[0].flow_vol_phase["Liq"]
+                / sum(
+                    self.mixer.find_component(f"mixed_state")[0].flow_mass_phase_comp[
+                        ion
+                    ]
+                    for ion in self.mixer.find_component(f"mixed_state")[
+                        0
+                    ].flow_mass_phase_comp
+                )
                 == self.mixer.pH["outlet"]
             )
+            if self.config.track_pE:
+                self.mixer.eq_pE = Constraint(
+                    expr=sum(
+                        self.mixer.pE[port]
+                        * sum(
+                            self.mixer.find_component(f"{port}_state")[
+                                0
+                            ].flow_mass_phase_comp[ion]
+                            for ion in self.mixer.find_component(f"{port}_state")[
+                                0
+                            ].flow_mass_phase_comp
+                        )
+                        for port in self.config.inlet_ports
+                    )
+                    / sum(
+                        self.mixer.find_component(f"mixed_state")[
+                            0
+                        ].flow_mass_phase_comp[ion]
+                        for ion in self.mixer.find_component(f"mixed_state")[
+                            0
+                        ].flow_mass_phase_comp
+                    )
+                    == self.mixer.pE["outlet"]
+                )
         for port in self.config.inlet_ports:
             self.mixer.find_component(f"{port}_state")[0].flow_mass_phase_comp[...]
             self.mixer.find_component(f"{port}_state")[0].conc_mass_phase_comp[...]
-
+            inlet_var = {"pH": self.mixer.pH[port]}
+            if self.config.track_pE:
+                inlet_var["pE"] = self.mixer.pE[port]
             self.register_port(
                 port,
                 self.mixer.find_component(port),
-                {"pH": self.mixer.pH[port]},
+                inlet_var,
             )
+        outlet_var = {"pH": self.mixer.pH["outlet"]}
+        if self.config.track_pE:
+            outlet_var["pE"] = self.mixer.pE["outlet"]
         self.register_port(
             "outlet",
             self.mixer.outlet,
-            {"pH": self.mixer.pH["outlet"]},
+            outlet_var,
         )
         self.mixer.find_component(f"mixed_state")[0].flow_mass_phase_comp[...]
         self.mixer.find_component(f"mixed_state")[0].conc_mass_phase_comp[...]
-        # make sure we pass temperature to outlet
+        # volumetric temp mixing - since we are assuming we are isothermal
+        # TODO: AAdd option to catch if we are isothermal or not
         self.mixer.temp_constraint = Constraint(
-            expr=self.mixer.find_component(f"{self.config.inlet_ports[0]}_state")[
-                0
-            ].temperature
+            expr=sum(
+                self.mixer.find_component(f"{port}_state")[0].temperature
+                * sum(
+                    self.mixer.find_component(f"{port}_state")[0].flow_mass_phase_comp[
+                        ion
+                    ]
+                    for ion in self.mixer.find_component(f"{port}_state")[
+                        0
+                    ].flow_mass_phase_comp
+                )
+                for port in self.config.inlet_ports
+            )
+            / sum(
+                self.mixer.find_component(f"mixed_state")[0].flow_mass_phase_comp[ion]
+                for ion in self.mixer.find_component(f"mixed_state")[
+                    0
+                ].flow_mass_phase_comp
+            )
             == self.mixer.mixed_state[0].temperature
         )
         self.mixer_initialized = False
@@ -162,6 +232,8 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
                 mixer_inlet.pressure,
             )
             reaktoro_options.system_state_option("pH", self.mixer.pH[port])
+            if self.config.track_pE:
+                reaktoro_options.system_state_option("pE", self.mixer.pE[port])
             reaktoro_options.aqueous_phase_option(
                 "composition",
                 mixer_inlet.flow_mol_phase_comp,
@@ -190,11 +262,17 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             "composition",
             feed_port.flow_mol_phase_comp,
         )
+        if self.config.track_pE:
+            reaktoro_options.system_state_option(
+                "pE", self.mixer.pE[self.config.inlet_ports[0]]
+            )
         reaktoro_options.system_state_option(
             "pH", self.mixer.pH[self.config.inlet_ports[0]]
         )
         reaktoro_options["build_speciation_block"] = True
         reaktoro_options["outputs"] = {("pH", None): self.mixer.pH["outlet"]}
+        if self.config.track_pE:
+            reaktoro_options["outputs"][("pE", None)] = self.mixer.pE["outlet"]
         reaktoro_options["external_speciation_reaktoro_blocks"] = mixing_blocks
         reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.mixer_speciation_block = ReaktoroBlock(**reaktoro_options)
@@ -203,6 +281,9 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
         iscale.constraint_scaling_transform(self.mixer.temp_constraint, 1e-2)
         for ph in self.mixer.pH:
             iscale.set_scaling_factor(self.mixer.pH[ph], 1 / 10)
+        if self.config.track_pE:
+            for pe in self.mixer.pE:
+                iscale.set_scaling_factor(self.mixer.pE[pe], 1 / 10)
         if self.config.add_reaktoro_chemistry == False:
             iscale.constraint_scaling_transform(self.mixer.eq_pH, 1 / 10)
 
@@ -215,11 +296,12 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             stream_init = {}
             for i, inlet in enumerate(self.config.inlet_ports):
                 inlet_var = self.mixer.find_component(f"{inlet}_state")[0]
-
-                if i > 0:
+                stale = inlet_var.pressure.stale
+                if stale:
                     stream_init[inlet] = True
                 else:
                     stream_init[inlet] = False
+                    ref_inlet = inlet
                     ref_stream = inlet_var
             for inlet, init_state in stream_init.items():
                 if init_state:
@@ -227,11 +309,19 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
                     for idx, obj in inlet_var.flow_mol_phase_comp.items():
                         obj.fix(ref_stream.flow_mol_phase_comp[idx].value * 1)
                         self.fixed_streams.append(obj)
-                    self.mixer.pH[inlet].value = self.mixer.pH[
-                        f"{self.config.inlet_ports[0]}"
-                    ].value
+                    inlet_var.pressure = ref_stream.pressure.value
+                    print("Propagated stream is ", ref_inlet)
+                    self.mixer.pH[inlet].value = self.mixer.pH[f"{ref_inlet}"].value
+                    inlet_var.temperature.value = self.mixer.find_component(
+                        f"{ref_inlet}_state"
+                    )[0].temperature.value
+                    print(
+                        "Fixed temperature for inlet ",
+                        inlet_var.temperature.value,
+                    )
+            self.mixer.pH["outlet"].value = self.mixer.pH[f"{ref_inlet}"].value
             self.mixer.mixed_state[0].temperature.value = self.mixer.find_component(
-                f"{self.config.inlet_ports[0]}_state"
+                f"{ref_inlet}_state"
             )[0].temperature.value
             self.mixer_initialized = True
 
@@ -244,24 +334,28 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
         for obj in self.fixed_streams:
             obj.unfix()
         self.fixed_streams = []
-        calculate_variable_from_constraint(
-            self.mixer.mixed_state[0].temperature,
-            self.mixer.temp_constraint,
-        )
         if self.config.add_reaktoro_chemistry:
             self.mixer_speciation_block.initialize()
 
     def get_model_state_dict(self):
-        def get_ion_comp(stream, pH):
+        def get_ion_comp(stream, pH, pE=None):
             data_dict = OrderedDict()
             data_dict["Mass flow of H2O"] = stream.flow_mass_phase_comp["Liq", "H2O"]
             for phase, ion in stream.conc_mass_phase_comp:
                 if ion != "H2O":
                     data_dict[ion] = stream.conc_mass_phase_comp[phase, ion]
             data_dict["pH"] = pH
+            if pE is not None:
+                data_dict["pE"] = pE
             data_dict["Temperature"] = stream.temperature
             data_dict["Pressure"] = stream.pressure
             return data_dict
+
+        def get_pe(port):
+            if self.config.track_pE:
+                return self.mixer.pE[port]
+            else:
+                return None
 
         unit_dofs = degrees_of_freedom(self)
 
@@ -272,10 +366,12 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             model_state[inlet] = get_ion_comp(
                 self.mixer.find_component(f"{inlet}_state")[0],
                 self.mixer.pH[inlet],
+                get_pe(inlet),
             )
 
         model_state["Outlet"] = get_ion_comp(
             self.mixer.find_component("mixed_state")[0],
             self.mixer.pH["outlet"],
+            get_pe("outlet"),
         )
         return self.name, model_state

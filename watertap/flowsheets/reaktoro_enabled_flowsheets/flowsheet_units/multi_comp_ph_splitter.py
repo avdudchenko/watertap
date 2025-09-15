@@ -63,6 +63,16 @@ class SplitterPhUnitData(WaterTapFlowsheetBlockData):
         """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -80,19 +90,30 @@ class SplitterPhUnitData(WaterTapFlowsheetBlockData):
             units=pyunits.dimensionless,
             bounds=(0, 13),
         )
-
+        if self.config.track_pE:
+            self.splitter.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
         for port in self.config.outlet_ports:
             self.splitter.find_component(f"{port}_state")[0].flow_mass_phase_comp[...]
             self.splitter.find_component(f"{port}_state")[0].conc_mass_phase_comp[...]
+            outlet_vars = {"pH": self.splitter.pH}
+            if self.config.track_pE:
+                outlet_vars["pE"] = self.splitter.pE
             self.register_port(
                 port,
                 self.splitter.find_component(port),
-                {"pH": self.splitter.pH},
+                outlet_vars,
             )
+        inlet_vars = {"pH": self.splitter.pH}
+        if self.config.track_pE:
+            inlet_vars["pE"] = self.splitter.pE
         self.register_port(
             "inlet",
             self.splitter.inlet,
-            {"pH": self.splitter.pH},
+            inlet_vars,
         )
         self.splitter.find_component(f"mixed_state")[0].flow_mass_phase_comp[...]
         self.splitter.find_component(f"mixed_state")[0].conc_mass_phase_comp[...]
@@ -123,13 +144,15 @@ class SplitterPhUnitData(WaterTapFlowsheetBlockData):
         self.splitter.initialize()
 
     def get_model_state_dict(self):
-        def get_ion_comp(stream, pH):
+        def get_ion_comp(stream, pH, pE=None):
             data_dict = OrderedDict()
             data_dict["Mass flow of H2O"] = stream.flow_mass_phase_comp["Liq", "H2O"]
             for phase, ion in stream.conc_mass_phase_comp:
                 if ion != "H2O":
                     data_dict[ion] = stream.conc_mass_phase_comp[phase, ion]
             data_dict["pH"] = pH
+            if pE is not None:
+                data_dict["pE"] = pE
             data_dict["Temperature"] = stream.temperature
             data_dict["Pressure"] = stream.pressure
             return data_dict
@@ -139,14 +162,23 @@ class SplitterPhUnitData(WaterTapFlowsheetBlockData):
         model_state = {
             "Model": {"DOFs": unit_dofs},
         }
+
+        def get_pe():
+            if self.config.track_pE:
+                return self.splitter.pE
+            else:
+                return None
+
         model_state["Inlet"] = get_ion_comp(
             self.splitter.find_component("mixed_state")[0],
             self.splitter.pH,
+            get_pe(),
         )
         for outlet in self.config.outlet_ports:
             model_state[outlet] = get_ion_comp(
                 self.splitter.find_component(f"{outlet}_state")[0],
                 self.splitter.pH,
+                get_pe(),
             )
 
         return self.name, model_state

@@ -136,6 +136,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             """,
         ),
     )
+    CONFIG.declare(
+        "track_pE",
+        ConfigValue(
+            default=False,
+            description="if pE should be tracked in the model",
+            doc="""
+                    Providing True will add pE variable to the model and track it
+            """,
+        ),
+    )
 
     def build(self):
         super().build()
@@ -188,14 +198,37 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_product.pH = Var(
             initialize=7, bounds=(0, 13), units=pyunits.dimensionless
         )
+        feed_vars = {"pH": self.ro_feed.pH}
+        retentate_vars = {"pH": self.ro_retentate.pH}
+        product_vars = {"pH": self.ro_product.pH}
+        if self.config.track_pE:
+            self.ro_feed.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            self.ro_retentate.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            self.ro_product.pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            self.ro_interface_pE = Var(
+                initialize=0,
+                units=pyunits.dimensionless,
+                bounds=(None, None),
+            )
+            feed_vars["pE"] = self.ro_feed.pE
+            retentate_vars["pE"] = self.ro_retentate.pE
+            product_vars["pE"] = self.ro_product.pE
 
-        self.register_port("feed", self.ro_feed.inlet, {"pH": self.ro_feed.pH})
-        self.register_port(
-            "retentate", self.ro_retentate.outlet, {"pH": self.ro_retentate.pH}
-        )
-        self.register_port(
-            "product", self.ro_product.outlet, {"pH": self.ro_product.pH}
-        )
+        self.register_port("feed", self.ro_feed.inlet, feed_vars)
+        self.register_port("retentate", self.ro_retentate.outlet, retentate_vars)
+        self.register_port("product", self.ro_product.outlet, product_vars)
 
         if self.config.build_monotonic_cp_constraint:
             self.build_monotonic_cp_constraint()
@@ -206,8 +239,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             self.build_scaling_constraints()
             self.add_reaktoro_chemistry()
         else:
-            self.add_retentate_ph_constraint()
-        self.add_permeate_ph_constraint()
+            self.add_retentate_ph_pe_constraint()
+        self.add_permeate_ph_pe_constraint()
 
         # connecting translator blocks to ro unit
         self.feed_to_ro = Arc(
@@ -223,18 +256,27 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             destination=self.ro_product.inlet,
         )
 
-    def add_retentate_ph_constraint(self):
+    def add_retentate_ph_pe_constraint(self):
         """adds retentate pH constraint"""
         self.ro_retentate.eq_ph_equality = Constraint(
             expr=self.ro_retentate.pH == self.ro_feed.pH
         )
+        if self.config.track_pE:
+            self.ro_retentate.eq_pE_equality = Constraint(
+                expr=self.ro_retentate.pE == self.ro_feed.pE
+            )
 
-    def add_permeate_ph_constraint(self):
+    def add_permeate_ph_pe_constraint(self):
         """adds permeate pH constraint, which we assume is average of feed and retentate"""
         self.ro_product.eq_average_permeate_pH = Constraint(
             expr=self.ro_product.pH
             == 0.5 * self.ro_feed.pH + 0.5 * self.ro_retentate.pH
         )
+        if self.config.track_pE:
+            self.ro_product.eq_average_permeate_pE = Constraint(
+                expr=self.ro_product.pE
+                == 0.5 * self.ro_feed.pE + 0.5 * self.ro_retentate.pE
+            )
 
     def get_ro_options(self):
         """defines ro defaults and overrides them with user config options if provided"""
@@ -443,6 +485,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         """add water removal constraint, and relevant reaktoro block"""
 
         outputs = {("pH", None): self.ro_interface_pH}
+        if self.config.track_pE:
+            outputs[("pE", None)] = self.ro_interface_pE
         for scalant in self.ro_unit.scaling_tendency:
             outputs[("scalingTendency", scalant)] = self.ro_unit.scaling_tendency[
                 scalant
@@ -462,6 +506,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             "temperature",
             self.ro_feed.properties_in[0].temperature,
         )
+        if self.config.track_pE:
+            self.reaktoro_options.system_state_option("pE", self.ro_feed.pE)
         self.reaktoro_options.system_state_option(
             "pressure",
             self.ro_feed.properties_in[0].pressure,
@@ -486,8 +532,14 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             self.eq_bulk_interface_ph = Constraint(
                 expr=self.ro_retentate.pH == self.ro_interface_pH
             )
+            if self.config.track_pE:
+                self.eq_bulk_interface_pE = Constraint(
+                    expr=self.ro_retentate.pE == self.ro_interface_pE
+                )
         else:
             outputs = {("pH", None): self.ro_retentate.pH}
+            if self.config.track_pE:
+                outputs[("pE", None)] = self.ro_retentate.pE
             if self.config.add_alkalinity:
                 self.ro_unit.alkalinity = Var(
                     initialize=1,
@@ -581,6 +633,11 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ro_retentate.pH, 1 / 10)
         iscale.set_scaling_factor(self.ro_product.pH, 1 / 10)
         iscale.set_scaling_factor(self.ro_interface_pH, 1 / 10)
+        if self.config.track_pE:
+            iscale.set_scaling_factor(self.ro_feed.pE, 1 / 10)
+            iscale.set_scaling_factor(self.ro_retentate.pE, 1 / 10)
+            iscale.set_scaling_factor(self.ro_product.pE, 1 / 10)
+            iscale.set_scaling_factor(self.ro_interface_pE, 1 / 10)
         # scale monotone cp constraint if it exists
         if self.ro_unit.find_component("monotone_cp_constraint") is not None:
             for eq in self.ro_unit.monotone_cp_constraint:
@@ -642,9 +699,16 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         # scale ph constraints
         if self.ro_retentate.find_component("eq_ph_equality") is not None:
             iscale.constraint_scaling_transform(self.ro_retentate.eq_ph_equality, 1)
+        if self.ro_retentate.find_component("eq_retentate_pE") is not None:
+            iscale.constraint_scaling_transform(self.ro_retentate.eq_ph_equality, 1)
+
         iscale.constraint_scaling_transform(
             self.ro_product.eq_average_permeate_pH, 1 / 10
         )
+        if self.ro_product.find_component("eq_average_permeate_pE") is not None:
+            iscale.constraint_scaling_transform(
+                self.ro_product.eq_average_permeate_pE, 1
+            )
 
         # scale scaling constraints if they exist
         if self.config.add_reaktoro_chemistry:
@@ -658,6 +722,8 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                     self.ro_unit.eq_max_scaling_tendency[scalant], sf
                 )
             if self.config.add_alkalinity:
+                iscale.set_scaling_factor(self.ro_unit.interface_alkalinity, 1)
+            if self.config.add_alkalinity and self.config.use_bulkcomp_for_effluent_pH:
                 iscale.set_scaling_factor(self.ro_unit.alkalinity, 1)
         # scale RO unit
         iscale.set_scaling_factor(self.ro_unit.area, 1 / self.ro_unit.area.value)
@@ -812,6 +878,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 ].conc_mass_phase_comp["Liq", self.ro_solute_type],
             },
         }
+        if self.config.track_pE:
+            model_state_dict["Inlet"]["pE"] = self.ro_feed.pE
+            model_state_dict["Retentate"]["pE"] = self.ro_retentate.pE
+            model_state_dict["Permeate"]["pE"] = self.ro_product.pE
         if self.config.add_reaktoro_chemistry:
             model_state_dict["Scaling potential"] = {}
             model_state_dict["Maximum scaling potential"] = {}

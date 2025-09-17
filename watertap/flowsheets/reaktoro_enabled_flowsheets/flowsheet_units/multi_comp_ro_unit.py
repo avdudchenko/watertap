@@ -163,12 +163,14 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         )
         self.ro_retentate.properties_in[0].flow_mol_phase_comp[...]
         self.ro_retentate.properties_in[0].conc_mass_phase_comp[...]
+        self.ro_retentate.properties_out[0].conc_mass_phase_comp[...]
         self.ro_product = Translator(
             inlet_property_package=self.config.ro_property_package,
             outlet_property_package=self.config.default_property_package,
         )
         self.ro_product.properties_in[0].flow_mol_phase_comp[...]
         self.ro_product.properties_in[0].conc_mass_phase_comp[...]
+        self.ro_product.properties_out[0].conc_mass_phase_comp[...]
         # set them up for translating input prop pack to outlet prop pack
         self.setup_inlet_translator_block(self.ro_feed)
 

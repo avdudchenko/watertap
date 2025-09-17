@@ -565,11 +565,6 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
         @self.precipitation_reactor.Constraint(self.selected_precipitants)
         def precipitation_limited_reaction(fs, phase):
             return (
-                # idaesMath.smooth_max(
-                #     fs.non_eq_flow_mol_precipitate[phase] * fs.non_eq_efficacy[phase],
-                #     1e-12,
-                #     eps=1e-14,
-                # )
                 fs.non_eq_flow_mol_precipitate[phase] * fs.non_eq_efficacy[phase]
                 == fs.flow_mol_precipitate[phase]
             )
@@ -703,7 +698,7 @@ class PrecipitationUnitData(WaterTapFlowsheetBlockData):
                     mol_precip_scale,
                 )
                 iscale.set_scaling_factor(
-                    self.precipitation_reactor.non_eq_efficacy[precip], 1
+                    self.precipitation_reactor.non_eq_efficacy[precip], 1 / 10
                 )
                 iscale.constraint_scaling_transform(
                     self.precipitation_reactor.precipitation_limited_reaction[precip],

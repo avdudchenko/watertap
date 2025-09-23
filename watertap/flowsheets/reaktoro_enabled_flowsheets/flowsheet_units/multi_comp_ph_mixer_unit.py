@@ -294,6 +294,8 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
             and self.mixer_initialized == False
         ):
             stream_init = {}
+
+            ref_stream = None
             for i, inlet in enumerate(self.config.inlet_ports):
                 inlet_var = self.mixer.find_component(f"{inlet}_state")[0]
                 stale = inlet_var.pressure.stale
@@ -304,7 +306,7 @@ class MixerPhUnitData(WaterTapFlowsheetBlockData):
                     ref_inlet = inlet
                     ref_stream = inlet_var
             for inlet, init_state in stream_init.items():
-                if init_state:
+                if init_state and ref_stream is not None:
                     inlet_var = self.mixer.find_component(f"{inlet}_state")[0]
                     for idx, obj in inlet_var.flow_mol_phase_comp.items():
                         obj.fix(ref_stream.flow_mol_phase_comp[idx].value * 1)

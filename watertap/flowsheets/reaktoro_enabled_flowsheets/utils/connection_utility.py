@@ -4,6 +4,7 @@ from pyomo.environ import (
     Constraint,
 )
 import idaes.core.util.scaling as iscale
+from pyomo.network import Port
 
 
 class PortContainer:
@@ -49,76 +50,95 @@ class ConnectionContainer:
 
     def __init__(self, outlet, inlet):
         self.registered_equality_constraints = []
-        if not isinstance(outlet, PortContainer) or not isinstance(
-            inlet, PortContainer
+        if not isinstance(outlet, (PortContainer, Port)) or not isinstance(
+            inlet, (PortContainer, Port)
         ):
             raise TypeError("Provided outlet and inlet must be PortContainer objects")
         self.build_arc(outlet, inlet)
         self.build_constraints(outlet, inlet)
+
+    def get_port(self, possible_port_object):
+        """Return port for port container or port object"""
+        if isinstance(possible_port_object, PortContainer):
+            return possible_port_object.port
+        elif isinstance(possible_port_object, Port):
+            return possible_port_object
+        else:
+            raise TypeError("Provided object is not a PortContainer or Port")
+
+    def get_port_unit(self, possible_port_object):
+        """Return unit for port container or port object"""
+        if isinstance(possible_port_object, PortContainer):
+            return possible_port_object.unit_block_reference
+        elif isinstance(possible_port_object, Port):
+            print(possible_port_object)
+            print(possible_port_object.parent_block().name)
+            return possible_port_object.parent_block().name
+        else:
+            raise TypeError("Provided object is not a PortContainer or Port")
 
     def build_arc(self, outlet, inlet):
         """
         builds a standard arc while naming it with outlet and inlet name, this should
         be a unique pair always (e.g. for a unit model you should only havbe single outlet-> inlet conenction)
         """
+
         outlet.unit_block_reference.add_component(
             f"{outlet.name}_to_{inlet.name}",
-            Arc(source=outlet.port, destination=inlet.port),
+            Arc(source=self.get_port(outlet), destination=self.get_port(inlet)),
         )
         # find it, if it was not created correctly, we will get an error
         self.registered_arc = outlet.unit_block_reference.find_component(
             f"{outlet.name}_to_{inlet.name}"
         )
-        self.unit_connection = f"{outlet.unit_block_reference}.{outlet.name}_to_{inlet.unit_block_reference}.{inlet.name}"
+        self.unit_connection = f"{self.get_port_unit(outlet)}.{outlet.name}_to_{self.get_port_unit(inlet)}.{inlet.name}"
 
     def build_constraints(self, outlet, inlet):
         """
         builds equality constraints for provided variables and scales them.
         We ensure that outlet and inlet vars are the same.
         """
-        none_test = [d != None for d in [outlet.var_dict, inlet.var_dict]]
-        if all(none_test):
-            if set(outlet.var_dict) != set(inlet.var_dict):
-                raise KeyError(
-                    f"Provided inlet keys: {outlet.var_dict} do not match outlet keys: {inlet.var_dict}"
-                )
+        if isinstance(outlet, PortContainer) and isinstance(inlet, PortContainer):
+            none_test = [d != None for d in [outlet.var_dict, inlet.var_dict]]
 
-            for outlet_key in outlet.var_dict:
-                # Do not create constraint if the variable is the same)
-                if outlet.var_dict[outlet_key] is inlet.var_dict[outlet_key]:
-                    pass
-                else:
-                    # create equality constraint between outlet and inlet var dicts
-                    outlet.unit_block_reference.add_component(
-                        f"eq_{outlet_key}_{outlet.name}_to_{inlet.name}",
-                        Constraint(
-                            expr=outlet.var_dict[outlet_key]
-                            == inlet.var_dict[outlet_key]
-                        ),
-                    )
-                    constraint = outlet.unit_block_reference.find_component(
-                        f"eq_{outlet_key}_{outlet.name}_to_{inlet.name}"
-                    )
-                    # ensure we register it for propagation later on
-                    self.registered_equality_constraints.append(
-                        (
-                            constraint,
-                            outlet.var_dict[outlet_key],
-                            inlet.var_dict[outlet_key],
-                        )
+            if all(none_test):
+                if set(outlet.var_dict) != set(inlet.var_dict):
+                    raise KeyError(
+                        f"Provided inlet keys: {outlet.var_dict} do not match outlet keys: {inlet.var_dict}"
                     )
 
-                    # scale the constraint
-                    sf = iscale.get_scaling_factor(outlet.var_dict[outlet_key])
-                    if sf != None:
-                        iscale.constraint_scaling_transform(
-                            constraint,
-                            sf,
+                for outlet_key in outlet.var_dict:
+                    # Do not create constraint if the variable is the same)
+                    if outlet.var_dict[outlet_key] is inlet.var_dict[outlet_key]:
+                        pass
+                    else:
+                        # create equality constraint between outlet and inlet var dicts
+                        outlet.unit_block_reference.add_component(
+                            f"eq_{outlet_key}_{outlet.name}_to_{inlet.name}",
+                            Constraint(
+                                expr=outlet.var_dict[outlet_key]
+                                == inlet.var_dict[outlet_key]
+                            ),
                         )
-        else:
-            raise ValueError(
-                "Both outlet and inlet being connected must have same provided var_dicts!"
-            )
+                        constraint = outlet.unit_block_reference.find_component(
+                            f"eq_{outlet_key}_{outlet.name}_to_{inlet.name}"
+                        )
+                        # ensure we register it for propagation later on
+                        self.registered_equality_constraints.append(
+                            (
+                                constraint,
+                                outlet.var_dict[outlet_key],
+                                inlet.var_dict[outlet_key],
+                            )
+                        )
+
+                        # scale the constraint
+                        sf = iscale.get_scaling_factor(outlet.var_dict[outlet_key])
+                        if sf != None:
+                            iscale.constraint_scaling_transform(
+                                constraint,
+                                sf,
+                            )
 
     def propagate(self):
         """this should prop any arcs and also ensure all equality constraints are satisfied"""

@@ -343,7 +343,7 @@ def add_global_constraints(m):
         * m.fs.water_recovery
         == m.fs.product.product.properties[0].flow_mass_phase_comp["Liq", "H2O"]
     )
-    iscale.set_scaling_factor(m.fs.eq_water_recovery, 1)
+    iscale.set_scaling_factor(m.fs.water_recovery, 1)
     iscale.constraint_scaling_transform(m.fs.eq_water_recovery, 1)
 
 

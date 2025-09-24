@@ -27,6 +27,7 @@ class PortContainer:
         """connect current port to provided port, registering
         the generated connection container using provided function"""
         connection = ConnectionContainer(self, inlet)
+        print(inlet, connection)
         self.unit_block_reference.register_outlet_connection(connection)
 
     def fix(self):
@@ -71,8 +72,6 @@ class ConnectionContainer:
         if isinstance(possible_port_object, PortContainer):
             return possible_port_object.unit_block_reference
         elif isinstance(possible_port_object, Port):
-            print(possible_port_object)
-            print(possible_port_object.parent_block().name)
             return possible_port_object.parent_block().name
         else:
             raise TypeError("Provided object is not a PortContainer or Port")
@@ -82,16 +81,22 @@ class ConnectionContainer:
         builds a standard arc while naming it with outlet and inlet name, this should
         be a unique pair always (e.g. for a unit model you should only havbe single outlet-> inlet conenction)
         """
+        arc = Arc(source=self.get_port(outlet), destination=self.get_port(inlet))
 
+        def get_safe_name(name):
+            return name.replace(".", "_").replace("-", "_")
+
+        arc_name = f"{get_safe_name(outlet.name)}_to_{get_safe_name(inlet.name)}"
         outlet.unit_block_reference.add_component(
-            f"{outlet.name}_to_{inlet.name}",
-            Arc(source=self.get_port(outlet), destination=self.get_port(inlet)),
+            arc_name,
+            arc,
         )
+
         # find it, if it was not created correctly, we will get an error
-        self.registered_arc = outlet.unit_block_reference.find_component(
-            f"{outlet.name}_to_{inlet.name}"
-        )
-        self.unit_connection = f"{self.get_port_unit(outlet)}.{outlet.name}_to_{self.get_port_unit(inlet)}.{inlet.name}"
+        self.registered_arc = outlet.unit_block_reference.find_component(arc_name)
+        if self.registered_arc is None:
+            raise ValueError(f"Arc was not created correctly for {arc_name}")
+        self.unit_connection = f"{self.get_port_unit(outlet)}.{get_safe_name(outlet.name)}_to_{self.get_port_unit(inlet)}.{get_safe_name(inlet.name)}"
 
     def build_constraints(self, outlet, inlet):
         """
@@ -142,6 +147,7 @@ class ConnectionContainer:
 
     def propagate(self):
         """this should prop any arcs and also ensure all equality constraints are satisfied"""
+        print(self.registered_arc.name)
         propagate_state(self.registered_arc)
         self.propagate_equality_constraints()
 

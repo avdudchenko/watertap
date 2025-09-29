@@ -621,7 +621,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         for phase in self.ro_unit.flux_mass_phase_comp:
             if "H2O" in phase:
                 self.ro_unit.flux_mass_phase_comp[phase].setlb(
-                    5 * pyunits.kg / (pyunits.m**2 * pyunits.hr)
+                    2.5 * pyunits.kg / (pyunits.m**2 * pyunits.hr)
                 )
                 self.ro_unit.flux_mass_phase_comp[phase].setub(
                     100 * pyunits.kg / (pyunits.m**2 * pyunits.hr)

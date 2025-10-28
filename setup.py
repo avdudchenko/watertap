@@ -77,7 +77,7 @@ setup(
         "parameter-sweep >=0.1.0",
         "numpy",
         "pint<0.25",
-        "hpro_analysis@https://github.com/avdudchenko/hpro_analysis.git",
+        "hpro_analysis@git+https://github.com/avdudchenko/hpro_analysis.git",
     ],
     extras_require={
         "testing": [

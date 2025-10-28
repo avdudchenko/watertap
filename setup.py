@@ -77,6 +77,7 @@ setup(
         "parameter-sweep >=0.1.0",
         "numpy",
         "pint<0.25",
+        "hpro_analysis@https://github.com/avdudchenko/hpro_analysis.git",
     ],
     extras_require={
         "testing": [
@@ -109,18 +110,6 @@ setup(
         ],
     },
     entry_points={
-        "watertap.flowsheets": [
-            "nf = watertap.flowsheets.nf_dspmde.nf_ui",
-            "bsm2 = watertap.flowsheets.full_water_resource_recovery_facility.BSM2_ui",
-            "bsm2_P_extension = watertap.flowsheets.full_water_resource_recovery_facility.BSM2_P_extension_ui",
-            "dye_desalination = watertap.flowsheets.dye_desalination.dye_desalination_ui",
-            "mvc = watertap.flowsheets.mvc.mvc_single_stage_ui",
-            "RO = watertap.flowsheets.RO_with_energy_recovery.RO_with_energy_recovery_ui",
-            "OARO = watertap.flowsheets.oaro.oaro_multi_ui",
-            "GAC = watertap.flowsheets.gac.gac_ui",
-            "ED_conc_recirc = watertap.flowsheets.electrodialysis.electrodialysis_1stack_conc_recirc_ui",
-            "LSRRO = watertap.flowsheets.lsrro.lsrro_ui",
-            "generic desal train = watertap.flowsheets.generic_desalination_train.generic_train_ui",
-        ],
+        "watertap.flowsheets": ["hpro = hpro_analysis.flowsheets.hpro_ui"],
     },
 )

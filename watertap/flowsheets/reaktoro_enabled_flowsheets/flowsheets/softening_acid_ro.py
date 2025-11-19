@@ -230,6 +230,7 @@ def build_model(
         default_costing_package=m.fs.costing,
         ro_property_package=m.fs.ro_properties,
         selected_scalants={"Calcite": 1, "Gypsum": 1},
+        use_interfacecomp_for_effluent_pH=True,
         reaktoro_options=rkt_options,
     )
 
@@ -251,6 +252,7 @@ def build_model(
             ro_property_package=m.fs.ro_properties,
             selected_scalants={"Calcite": 1, "Gypsum": 1},
             reaktoro_options=rkt_options,
+            use_interfacecomp_for_effluent_pH=True,
             default_costing_package_kwargs={
                 "costing_method_arguments": {"ro_type": "high_pressure"}
             },

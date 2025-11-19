@@ -77,7 +77,18 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             description="To use Reaktoro-PSE for estimating scaling potential",
             doc="""
             If True, builds a reaktoro block and uses it to calculate scaling potential at membrane water interface in
-            final RO node as well as pH, assumed to be same as the bulk
+            final RO node, if use_interfacecomp_for_effluent_pH or use_bulkcomp_for_effluent_pH is True, it will be used to compute pH as well
+            """,
+        ),
+    )
+    CONFIG.declare(
+        "use_interfacecomp_for_effluent_pH",
+        ConfigValue(
+            default=False,
+            description="Builds a separate reaktoro block for estimating effluent pH and pE if applicable",
+            doc="""
+            If True, builds a second reaktoro block just for estimating effluent pH based on bulk composition of feed in final node. 
+            This will provide a more accurate estimation of pH especially for system operating with high concentration polarization.
             """,
         ),
     )
@@ -85,7 +96,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         "use_bulkcomp_for_effluent_pH",
         ConfigValue(
             default=False,
-            description="Builds a separate reaktoro block for estimating effluent pH",
+            description="Builds a separate reaktoro block for estimating effluent pH and pE if applicable",
             doc="""
             If True, builds a second reaktoro block just for estimating effluent pH based on bulk composition of feed in final node. 
             This will provide a more accurate estimation of pH especially for system operating with high concentration polarization.
@@ -203,6 +214,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         feed_vars = {"pH": self.ro_feed.pH}
         retentate_vars = {"pH": self.ro_retentate.pH}
         product_vars = {"pH": self.ro_product.pH}
+
         if self.config.track_pE:
             self.ro_feed.pE = Var(
                 initialize=0,
@@ -240,7 +252,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         if self.config.add_reaktoro_chemistry:
             self.build_scaling_constraints()
             self.add_reaktoro_chemistry()
-        else:
+        elif (
+            self.config.use_interfacecomp_for_effluent_pH == False
+            and self.config.use_bulkcomp_for_effluent_pH == False
+        ):
             self.add_retentate_ph_pe_constraint()
         self.add_permeate_ph_pe_constraint()
 
@@ -530,7 +545,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.reaktoro_options["outputs"] = outputs
         self.reaktoro_options.update_with_user_options(self.config.reaktoro_options)
         self.scaling_block = ReaktoroBlock(**self.reaktoro_options)
-        if self.config.use_bulkcomp_for_effluent_pH == False:
+        if (
+            self.config.use_bulkcomp_for_effluent_pH == False
+            and self.config.use_interfacecomp_for_effluent_pH
+        ):
             self.eq_bulk_interface_ph = Constraint(
                 expr=self.ro_retentate.pH == self.ro_interface_pH
             )
@@ -538,7 +556,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 self.eq_bulk_interface_pE = Constraint(
                     expr=self.ro_retentate.pE == self.ro_interface_pE
                 )
-        else:
+        elif self.config.use_bulkcomp_for_effluent_pH:
             outputs = {("pH", None): self.ro_retentate.pH}
             if self.config.track_pE:
                 outputs[("pE", None)] = self.ro_retentate.pE
@@ -591,12 +609,12 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         self.ro_unit.feed_side.cp_modulus.setub(50)
         self.ro_unit.feed_side.cp_modulus.setlb(0.0)
         # Deals with low feed salinity
-        for e in self.ro_unit.permeate_side:
-            if e[-1] != 0:
-                self.ro_unit.permeate_side[e].pressure_osm_phase["Liq"].setlb(200)
-                self.ro_unit.permeate_side[e].molality_phase_comp[
-                    "Liq", self.ro_solute_type
-                ].setlb(1e-8)
+        # for e in self.ro_unit.permeate_side:
+        #     if e[-1] != 0:
+        #         self.ro_unit.permeate_side[e].pressure_osm_phase["Liq"].setlb(200)
+        #         self.ro_unit.permeate_side[e].molality_phase_comp[
+        #             "Liq", self.ro_solute_type
+        #         ].setlb(1e-8)
 
         self.ro_unit.feed_side.K.setlb(1e-6)
         self.ro_unit.feed_side.friction_factor_darcy.setub(200)
@@ -660,6 +678,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
             prop_scaling[self.ro_solute_type],
             index=("Liq", self.ro_solute_type),
         )
+
         # Scale the translator blocks
         for block in [self.ro_feed, self.ro_retentate, self.ro_product]:
             iscale.constraint_scaling_transform(block.eq_pressure_equality, 1e-5)
@@ -735,7 +754,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         iscale.set_scaling_factor(self.ro_unit.width, 1 / self.ro_unit.width.value)
         iscale.set_scaling_factor(self.ro_unit.length, 1 / self.ro_unit.length.value)
 
-        if self.config.use_bulkcomp_for_effluent_pH == False:
+        if (
+            self.config.use_bulkcomp_for_effluent_pH == False
+            and self.config.use_interfacecomp_for_effluent_pH
+        ):
             iscale.constraint_scaling_transform(self.eq_bulk_interface_ph, 1 / 10)
 
     def get_default_scaling_factors(self):
@@ -774,7 +796,7 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
                 additonal_var_to_fix = [additonal_var_to_fix]
             for var in additonal_var_to_fix:
                 var.fix()
-        block.initialize()
+        # block.initialize()
         flags = fix_state_vars(block.properties_in)
         solver = get_solver()
         results = solver.solve(block, tee=False)

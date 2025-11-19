@@ -233,7 +233,7 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
             solver = get_solver()
         result = solver.solve(block, tee=False)
         assert_optimal_termination(result)
-        self.feed.display()
+        # self.feed.display()
         assert degrees_of_freedom(block) == 0
 
     def reaktoro_reconciliation(self):
@@ -258,9 +258,11 @@ class MultiCompFeedData(WaterTapFlowsheetBlockData):
 
         iscale.calculate_scaling_factors(sub_model)
         # make sure we scale before solve
+
         sub_model.fs.feed.charge = Var(units=pyunits.dimensionless)
         iscale.set_scaling_factor(sub_model.fs.feed.charge, 1)
-        self.feed.charge = Var(units=pyunits.dimensionless)
+        if self.feed.find_component("charge") is None:
+            self.feed.charge = Var(units=pyunits.dimensionless)
         iscale.calculate_scaling_factors(sub_model.fs.feed)
         initial_con = value(
             pyunits.convert(

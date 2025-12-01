@@ -252,9 +252,10 @@ class MultiCompROUnitData(WaterTapFlowsheetBlockData):
         if self.config.add_reaktoro_chemistry:
             self.build_scaling_constraints()
             self.add_reaktoro_chemistry()
-        elif (
+        if (
             self.config.use_interfacecomp_for_effluent_pH == False
             and self.config.use_bulkcomp_for_effluent_pH == False
+            or self.config.add_reaktoro_chemistry == False
         ):
             self.add_retentate_ph_pe_constraint()
         self.add_permeate_ph_pe_constraint()

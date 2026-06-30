@@ -14,7 +14,7 @@ env:
   PIP_PROGRESS_BAR: "off"
   PYTHON_VERSION: "3.11"
   PACKAGE_NAME: "watertap"
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -113,14 +113,16 @@ jobs:
           print(f"{name=}\n{tag=}\n{normalized_tag=}\n{pkg_version=}")
           assert pkg_version == normalized_tag
           ' "watertap" "${{ github.ref_name }}"
-
+      - name: Install OS deps for ipopt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblapack3 libblas3 libgfortran5
       - name: Run tests
         working-directory: /tmp
         run: |
           idaes get-extensions --extra petsc --verbose
           pip install pytest
-          pytest --pyargs watertap
-
+          pytest --pyargs watertap -x -vv
   upload-test-pypi:
     needs: [test-whl]
     runs-on: ubuntu-latest
@@ -168,8 +170,7 @@ jobs:
         run: |
           idaes get-extensions --extra petsc --verbose
           pip install pytest
-          pytest --pyargs watertap
-
+          pytest --pyargs watertap -x -vv
   upload-pypi:
     needs: [install-test-pypi]
     runs-on: ubuntu-latest

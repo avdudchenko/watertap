@@ -205,9 +205,9 @@ jobs:
           activate-environment: ${{ env.ENV_NAME }}
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install watertap==${{ github.ref_name }}[all] from PyPI
+      - name: Install watertap==${{ github.ref_name }} from PyPI
         run: |
-          pip install "watertap[all]==${{ github.ref_name }}"
+          pip install "watertap==${{ github.ref_name }}"
 
       - name: Create output directory
         run: mkdir "$OUTPUT_DIR"
